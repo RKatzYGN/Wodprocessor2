@@ -26,17 +26,19 @@ import {
 // ----------------------------------------------------------------------
 // Firebase Setup
 // ----------------------------------------------------------------------
-let app, auth, db, appId;
-try {
-  const firebaseConfig = JSON.parse(__firebase_config);
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  appId = typeof __app_id !== 'undefined' ? __app_id : 'doc-editor-app';
-} catch (e) {
-  console.warn("Firebase config fallback / local context warning:", e);
-  appId = 'doc-editor-app';
-}
+const firebaseConfig = {
+  apiKey: "AIzaSyBwURdUU69kkRQTIXUimC-ICc5jE4W3E-w",
+  authDomain: "simple-word-processor-2.firebaseapp.com",
+  projectId: "simple-word-processor-2",
+  storageBucket: "simple-word-processor-2.firebasestorage.app",
+  messagingSenderId: "188052684856",
+  appId: "1:188052684856:web:fd1901b30527abf61ea6cd"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = 'doc-editor-app';
 
 export default function App() {
   // ----------------------------------------------------------------------
