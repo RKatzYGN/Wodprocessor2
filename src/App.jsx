@@ -520,14 +520,3 @@ export default function App() {
     </div>
   );
 }
-Once committed, update your Firestore Security Rules under Database > Rules:
-
-JavaScript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId}/documents/{docId} {
-      allow read, write, delete: if request.auth != null && request.auth.uid == userId;
-    }
-  }
-}
