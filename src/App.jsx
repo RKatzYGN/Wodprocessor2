@@ -26,12 +26,12 @@ import {
 // Firebase Config - Replace with your actual Firebase Console keys!
 // ----------------------------------------------------------------------
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBwURdUU69kkRQTIXUimC-ICc5jE4W3E-w",
+  authDomain: "simple-word-processor-2.firebaseapp.com",
+  projectId: "simple-word-processor-2",
+  storageBucket: "simple-word-processor-2.firebasestorage.app",
+  messagingSenderId: "188052684856",
+  appId: "1:188052684856:web:fd1901b30527abf61ea6cd"
 };
 
 const app = initializeApp(firebaseConfig);
