@@ -346,12 +346,40 @@ export default function App() {
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        @media print {
-          header, sidebar, .no-print, .toolbar-container { display: none !important; }
-          .main-content { padding: 0 !important; margin: 0 !important; }
-          .paper-page { box-shadow: none !important; margin: 0 !important; width: 100% !important; border: none !important; padding: 1in !important; page-break-after: always; }
-        }
-      `}</style>
+  @media print {
+    /* Hide top bar, sidebar, and all UI controls */
+    header, sidebar, .no-print, .toolbar-container { 
+      display: none !important; 
+    }
+
+    /* Reset background and layout containers */
+    body, html, #root, .main-content, div { 
+      background: white !important; 
+      overflow: visible !important; 
+      height: auto !important;
+      max-height: none !important;
+    }
+
+    /* Reset editor padding and border for print */
+    .paper-page { 
+      box-shadow: none !important; 
+      margin: 0 !important; 
+      width: 100% !important; 
+      border: none !important; 
+      padding: 0 !important; 
+      page-break-after: always; 
+    }
+
+    /* Hide scrollbars specifically for print output */
+    ::-webkit-scrollbar { 
+      display: none !important; 
+    }
+    * { 
+      -ms-overflow-style: none !important; 
+      scrollbar-width: none !important; 
+    }
+  }
+`}</style>
 
       {/* Top Header */}
       <header className="no-print flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm z-20">
