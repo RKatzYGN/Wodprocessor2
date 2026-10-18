@@ -351,36 +351,43 @@ export default function App() {
   // --- Main Editor Screen ---
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
-     <style>{`
+    <style>{`
   @media print {
+    /* Hide all application UI */
     header, sidebar, .no-print, .toolbar-container { 
       display: none !important; 
     }
+
+    /* Force background and root container to print colors */
     body, html, #root, .main-content { 
       background: white !important; 
       overflow: visible !important; 
       height: auto !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
+
+    /* Set exact US Letter page dimensions for print */
+    @page {
+      size: 8.5in 11in;
+      margin: 0;
+    }
+
     .paper-page { 
       box-shadow: none !important; 
-      margin: 0 !important; 
-      width: 100% !important; 
+      margin: 0 auto !important; 
+      width: 8.5in !important; 
+      min-height: 11in !important; 
       border: none !important; 
       padding: 1in !important; 
       page-break-after: always; 
-      min-height: auto !important;
+      page-break-inside: avoid;
+      background: white !important;
     }
+
+    /* Hide scrollbars during print execution */
     ::-webkit-scrollbar { 
       display: none !important; 
-    }
-  }
-    /* Hide scrollbars specifically for print output */
-    ::-webkit-scrollbar { 
-      display: none !important; 
-    }
-    * { 
-      -ms-overflow-style: none !important; 
-      scrollbar-width: none !important; 
     }
   }
 `}</style>
@@ -534,33 +541,34 @@ export default function App() {
           </div>
 
 {/* Canvas Container with Dynamic Pages */}
-          <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
-            {Array.from({ length: totalPages }).map((_, index) => (
-              <div 
-                key={index} 
-                className="paper-page bg-white shadow-xl border border-slate-300 transition-all duration-200 relative" 
-                style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
-              >
-                {/* Page Content editable area */}
-                {index === 0 && (
-                  <div
-                    ref={editorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onInput={handleEditorInput}
-                    onKeyUp={checkActiveFormats}
-                    onMouseUp={checkActiveFormats}
-                    className="min-h-[864px] outline-none text-slate-900 leading-relaxed font-sans"
-                  />
-                )}
+<div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
+  {Array.from({ length: totalPages }).map((_, index) => (
+    <div 
+      key={index} 
+      className="paper-page bg-white shadow-xl border border-slate-300 relative overflow-hidden" 
+      style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
+    >
+      {/* Page Content Editable Area - Rendered strictly on Page 1 */}
+      {index === 0 && (
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleEditorInput}
+          onKeyUp={checkActiveFormats}
+          onMouseUp={checkActiveFormats}
+          className="min-h-[864px] outline-none text-slate-900 leading-relaxed font-sans relative z-10"
+          style={{ width: '100%', height: '100%' }}
+        />
+      )}
 
-                {/* Page Number Footer */}
-                <div className="absolute bottom-6 right-8 text-xs font-semibold text-slate-400 no-print select-none">
-                  Page {index + 1} of {totalPages}
-               </div>
-              </div>
-            ))}
-          </div>
+      {/* Page Number Footer */}
+      <div className="absolute bottom-6 right-8 text-xs font-semibold text-slate-400 no-print select-none z-0">
+        Page {index + 1} of {totalPages}
+      </div>
+    </div>
+  ))}
+</div>
 
         </div>
       </div>
