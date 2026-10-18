@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  FileText, Plus, Trash2, Printer, Download, Save, 
-  Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  FolderOpen, User, Check, AlertCircle, Palette, Highlighter, Clock, LogOut, Key, Mail,
+  FileText, Plus, Trash2, Printer, Download,
+  Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
+  FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
   FileCode
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 
 // ----------------------------------------------------------------------
-// Firebase Config - Replace with your actual Firebase Console keys!
+// Firebase Config - Make sure your actual credentials are here!
 // ----------------------------------------------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyBwURdUU69kkRQTIXUimC-ICc5jE4W3E-w",
@@ -56,14 +56,15 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Formatting States
+  // Formatting & Stats States
   const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, align: 'left' });
   const [fontFamily, setFontFamily] = useState('Arial');
   const [fontSize, setFontSize] = useState('3');
   const [lineSpacing, setLineSpacing] = useState('1.15');
   const [textColor, setTextColor] = useState('#000000');
   const [highlightColor, setHighlightColor] = useState('#ffffff');
-  const [totalPages, setTotalPages] = useState(1);
+  const [wordCount, setWordCount] = useState(0);
+  const [charCount, setCharCount] = useState(0);
 
   const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
@@ -129,6 +130,7 @@ export default function App() {
     if (editorRef.current) {
       editorRef.current.innerHTML = docItem.content || '';
     }
+    updateWordCount(docItem.content || '');
     setSaveStatus('Saved');
   };
 
@@ -149,6 +151,7 @@ export default function App() {
       if (editorRef.current) {
         editorRef.current.innerHTML = newDocData.content;
       }
+      updateWordCount(newDocData.content);
       setSaveStatus('Saved');
     } catch (err) {
       console.error("Failed to create doc:", err);
@@ -185,6 +188,15 @@ export default function App() {
     }, 1000);
   };
 
+  const updateWordCount = (htmlText) => {
+    const temp = document.createElement('div');
+    temp.innerHTML = htmlText;
+    const text = temp.innerText || temp.textContent || '';
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    setWordCount(words);
+    setCharCount(text.length);
+  };
+
   const handleTitleChange = (e) => {
     const val = e.target.value;
     setTitle(val);
@@ -196,22 +208,10 @@ export default function App() {
     const updatedHtml = editorRef.current.innerHTML;
     setContent(updatedHtml);
     checkActiveFormats();
-    calculatePages();
+    updateWordCount(updatedHtml);
     triggerAutoSave(updatedHtml, title);
   };
 
-const calculatePages = () => {
-    if (!editorRef.current) return;
-    // Standard printable inner page height in pixels
-    const innerPageHeight = 864; 
-    const totalContentHeight = editorRef.current.scrollHeight;
-    
-    // Automatically generate exact pages needed
-    const pagesNeeded = Math.max(1, Math.ceil(totalContentHeight / innerPageHeight));
-    if (pagesNeeded !== totalPages) {
-      setTotalPages(pagesNeeded);
-    }
-  };
   const checkActiveFormats = () => {
     if (!document.getSelection) return;
     setActiveFormats({
@@ -351,50 +351,45 @@ const calculatePages = () => {
   // --- Main Editor Screen ---
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
-   <style>{`
-  @media print {
-    /* Hide all web application UI components */
-    header, sidebar, .no-print, .toolbar-container { 
-      display: none !important; 
-    }
+      <style>{`
+        /* Dynamic CSS page breaks for multi-page documents on screen */
+        .page-canvas {
+          background-image: linear-gradient(to bottom, #ffffff 0px, #ffffff 960px, #cbd5e1 960px, #cbd5e1 992px, #ffffff 992px);
+          background-size: 100% 992px;
+        }
 
-    body, html, #root, .main-content { 
-      background: white !important; 
-      overflow: visible !important; 
-      height: auto !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-
-    /* Force US Letter page size */
-    @page {
-      size: 8.5in 11in;
-      margin: 0;
-    }
-
-    .paper-document {
-      width: 100% !important;
-      gap: 0 !important;
-    }
-
-    .paper-page { 
-      box-shadow: none !important; 
-      margin: 0 auto !important; 
-      width: 8.5in !important; 
-      height: 11in !important; 
-      border: none !important; 
-      padding: 1in !important; 
-      page-break-after: always !important; 
-      page-break-inside: avoid !important;
-      background: white !important;
-      overflow: hidden !important;
-    }
-
-    ::-webkit-scrollbar { 
-      display: none !important; 
-    }
-  }
-`}</style>
+        /* Print Specific Media Rules */
+        @media print {
+          header, sidebar, .no-print, .toolbar-container, .status-bar { 
+            display: none !important; 
+          }
+          body, html, #root, .main-content { 
+            background: white !important; 
+            overflow: visible !important; 
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          @page {
+            size: 8.5in 11in;
+            margin: 1in;
+          }
+          .paper-page { 
+            box-shadow: none !important; 
+            margin: 0 !important; 
+            width: 100% !important; 
+            border: none !important; 
+            padding: 0 !important; 
+            background: white !important;
+          }
+          .page-canvas {
+            background-image: none !important;
+          }
+          ::-webkit-scrollbar { 
+            display: none !important; 
+          }
+        }
+      `}</style>
 
       {/* Top Header */}
       <header className="no-print flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm z-20">
@@ -424,7 +419,7 @@ const calculatePages = () => {
           </div>
         </div>
 
-        {/* User Account Controls */}
+        {/* Account Controls & Printing */}
         <div className="flex items-center gap-3">
           <button onClick={handlePrint} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <Printer className="h-4 w-4 text-slate-500" /> Print
@@ -454,7 +449,7 @@ const calculatePages = () => {
         </div>
       </header>
 
-      {/* Workspace */}
+      {/* Main Workspace */}
       <div className="flex flex-1 overflow-hidden relative">
         <aside className={`no-print flex flex-col border-r border-slate-200 bg-white transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden'}`}>
           <div className="p-3">
@@ -482,7 +477,7 @@ const calculatePages = () => {
         {/* Editor Area */}
         <div className="main-content flex flex-1 flex-col overflow-hidden bg-slate-200">
           
-          {/* Full Formatting Toolbar */}
+          {/* Formatting Toolbar */}
           <div className="toolbar-container no-print flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-4 py-2 shadow-sm z-10">
             {/* Font Family */}
             <select value={fontFamily} onChange={(e) => applyFontFamily(e.target.value)} className="h-8 rounded border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700">
@@ -508,7 +503,7 @@ const calculatePages = () => {
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Formatting */}
+            {/* Formatting Actions */}
             <button onClick={() => executeCommand('bold')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.bold ? 'bg-slate-200 text-blue-600' : ''}`}><Bold className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('italic')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.italic ? 'bg-slate-200 text-blue-600' : ''}`}><Italic className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('underline')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.underline ? 'bg-slate-200 text-blue-600' : ''}`}><Underline className="h-4 w-4" /></button>
@@ -526,7 +521,7 @@ const calculatePages = () => {
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Text Alignment */}
+            {/* Alignments */}
             <button onClick={() => executeCommand('justifyLeft')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'left' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignLeft className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('justifyCenter')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'center' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignCenter className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('justifyRight')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'right' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignRight className="h-4 w-4" /></button>
@@ -544,44 +539,30 @@ const calculatePages = () => {
             </label>
           </div>
 
-{/* Canvas Container with Strictly Segmented Pages */}
-          <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
-            <div className="paper-document flex flex-col gap-8 items-center" style={{ width: '816px' }}>
-              {Array.from({ length: totalPages }).map((_, index) => (
-                <div 
-                  key={index} 
-                  className="paper-page bg-white shadow-xl border border-slate-300 relative overflow-hidden" 
-                  style={{ 
-                    width: '816px', 
-                    height: '1056px', 
-                    padding: '96px',
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  {/* Single continuous editor pinned to Page 1 with overflow container height */}
-                  {index === 0 && (
-                    <div
-                      ref={editorRef}
-                      contentEditable
-                      suppressContentEditableWarning
-                      onInput={handleEditorInput}
-                      onKeyUp={checkActiveFormats}
-                      onMouseUp={checkActiveFormats}
-                      className="outline-none text-slate-900 leading-relaxed font-sans relative z-10"
-                      style={{ 
-                        minHeight: '864px',
-                        width: '100%',
-                        wordBreak: 'break-word'
-                      }}
-                    />
-                  )}
+          {/* Paper Canvas (Google Docs Continuous Page Layout) */}
+          <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
+            <div 
+              className="paper-page page-canvas shadow-2xl border border-slate-300 transition-all duration-200" 
+              style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
+            >
+              <div
+                ref={editorRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={handleEditorInput}
+                onKeyUp={checkActiveFormats}
+                onMouseUp={checkActiveFormats}
+                className="min-h-[864px] outline-none text-slate-900 leading-relaxed font-sans"
+              />
+            </div>
+          </div>
 
-                  {/* Visual Page Number Footer */}
-                  <div className="absolute bottom-6 right-8 text-xs font-semibold text-slate-400 no-print select-none z-20">
-                    Page {index + 1} of {totalPages}
-                  </div>
-                </div>
-              ))}
+          {/* Bottom Status Bar */}
+          <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
+            <div>Word Processor Workspace</div>
+            <div className="flex items-center gap-4">
+              <span>{wordCount} words</span>
+              <span>{charCount} characters</span>
             </div>
           </div>
 
