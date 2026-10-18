@@ -201,17 +201,17 @@ export default function App() {
   };
 
 const calculatePages = () => {
-  if (!editorRef.current) return;
-  // Fixed printable canvas height (11 inches - margins)
-  const singlePageHeight = 896; 
-  const currentHeight = editorRef.current.scrollHeight;
-  
-  // Calculate total pages required
-  const neededPages = Math.max(1, Math.ceil(currentHeight / singlePageHeight));
-  if (neededPages !== totalPages) {
-    setTotalPages(neededPages);
-  }
-};
+    if (!editorRef.current) return;
+    // Standard printable inner page height in pixels
+    const innerPageHeight = 864; 
+    const totalContentHeight = editorRef.current.scrollHeight;
+    
+    // Automatically generate exact pages needed
+    const pagesNeeded = Math.max(1, Math.ceil(totalContentHeight / innerPageHeight));
+    if (pagesNeeded !== totalPages) {
+      setTotalPages(pagesNeeded);
+    }
+  };
   const checkActiveFormats = () => {
     if (!document.getSelection) return;
     setActiveFormats({
@@ -353,9 +353,11 @@ const calculatePages = () => {
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
    <style>{`
   @media print {
+    /* Hide all web application UI components */
     header, sidebar, .no-print, .toolbar-container { 
       display: none !important; 
     }
+
     body, html, #root, .main-content { 
       background: white !important; 
       overflow: visible !important; 
@@ -363,10 +365,18 @@ const calculatePages = () => {
       margin: 0 !important;
       padding: 0 !important;
     }
+
+    /* Force US Letter page size */
     @page {
       size: 8.5in 11in;
       margin: 0;
     }
+
+    .paper-document {
+      width: 100% !important;
+      gap: 0 !important;
+    }
+
     .paper-page { 
       box-shadow: none !important; 
       margin: 0 auto !important; 
@@ -374,10 +384,12 @@ const calculatePages = () => {
       height: 11in !important; 
       border: none !important; 
       padding: 1in !important; 
-      page-break-after: always; 
-      page-break-inside: avoid;
+      page-break-after: always !important; 
+      page-break-inside: avoid !important;
       background: white !important;
+      overflow: hidden !important;
     }
+
     ::-webkit-scrollbar { 
       display: none !important; 
     }
@@ -532,19 +544,21 @@ const calculatePages = () => {
             </label>
           </div>
 
-{/* Canvas Container with Paginated Visual Sheets */}
+{/* Canvas Container with Strictly Segmented Pages */}
           <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
-            <div 
-              className="paper-document flex flex-col gap-8 items-center"
-              style={{ width: '816px' }}
-            >
+            <div className="paper-document flex flex-col gap-8 items-center" style={{ width: '816px' }}>
               {Array.from({ length: totalPages }).map((_, index) => (
                 <div 
                   key={index} 
-                  className="paper-page bg-white shadow-xl border border-slate-300 relative" 
-                  style={{ width: '816px', height: '1056px', padding: '96px 96px 64px 96px' }}
+                  className="paper-page bg-white shadow-xl border border-slate-300 relative overflow-hidden" 
+                  style={{ 
+                    width: '816px', 
+                    height: '1056px', 
+                    padding: '96px',
+                    boxSizing: 'border-box'
+                  }}
                 >
-                  {/* Render editable area inside Page 1 while allowing content flow */}
+                  {/* Single continuous editor pinned to Page 1 with overflow container height */}
                   {index === 0 && (
                     <div
                       ref={editorRef}
@@ -553,17 +567,17 @@ const calculatePages = () => {
                       onInput={handleEditorInput}
                       onKeyUp={checkActiveFormats}
                       onMouseUp={checkActiveFormats}
-                      className="outline-none text-slate-900 font-sans"
+                      className="outline-none text-slate-900 leading-relaxed font-sans relative z-10"
                       style={{ 
-                        minHeight: '896px', 
-                        lineHeight: '1.6',
-                        fontSize: '16px'
+                        minHeight: '864px',
+                        width: '100%',
+                        wordBreak: 'break-word'
                       }}
                     />
                   )}
 
-                  {/* Page Number Footer */}
-                  <div className="absolute bottom-4 right-8 text-xs font-semibold text-slate-400 no-print select-none">
+                  {/* Visual Page Number Footer */}
+                  <div className="absolute bottom-6 right-8 text-xs font-semibold text-slate-400 no-print select-none z-20">
                     Page {index + 1} of {totalPages}
                   </div>
                 </div>
