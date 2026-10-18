@@ -351,31 +351,29 @@ export default function App() {
   // --- Main Editor Screen ---
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
-      <style>{`
+     <style>{`
   @media print {
-    /* Hide top bar, sidebar, and all UI controls */
     header, sidebar, .no-print, .toolbar-container { 
       display: none !important; 
     }
-
-    /* Reset background and layout containers */
-    body, html, #root, .main-content, div { 
+    body, html, #root, .main-content { 
       background: white !important; 
       overflow: visible !important; 
       height: auto !important;
-      max-height: none !important;
     }
-
-    /* Reset editor padding and border for print */
     .paper-page { 
       box-shadow: none !important; 
       margin: 0 !important; 
       width: 100% !important; 
       border: none !important; 
-      padding: 0 !important; 
+      padding: 1in !important; 
       page-break-after: always; 
+      min-height: auto !important;
     }
-
+    ::-webkit-scrollbar { 
+      display: none !important; 
+    }
+  }
     /* Hide scrollbars specifically for print output */
     ::-webkit-scrollbar { 
       display: none !important; 
