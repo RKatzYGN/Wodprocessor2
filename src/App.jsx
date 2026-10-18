@@ -200,12 +200,18 @@ export default function App() {
     triggerAutoSave(updatedHtml, title);
   };
 
-  const calculatePages = () => {
-    if (!editorRef.current) return;
-    const height = editorRef.current.scrollHeight;
-    setTotalPages(Math.max(1, Math.ceil(height / 960)));
-  };
-
+ const calculatePages = () => {
+  if (!editorRef.current) return;
+  // Standard printable page height in pixels (11 inches at 96 DPI minus margins)
+  const pageHeight = 864; 
+  const currentContentHeight = editorRef.current.scrollHeight;
+  
+  // Calculate total required pages based on content height
+  const neededPages = Math.max(1, Math.ceil(currentContentHeight / pageHeight));
+  if (neededPages !== totalPages) {
+    setTotalPages(neededPages);
+  }
+};
   const checkActiveFormats = () => {
     if (!document.getSelection) return;
     setActiveFormats({
