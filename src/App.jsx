@@ -557,7 +557,13 @@ export default function App() {
                 {/* Page Number Footer */}
                 <div className="absolute bottom-6 right-8 text-xs font-semibold text-slate-400 no-print select-none">
                   Page {index + 1} of {totalPages}
-                </div>
+               </div>
               </div>
             ))}
-      
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
