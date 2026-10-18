@@ -529,21 +529,34 @@ export default function App() {
             </label>
           </div>
 
-          {/* Canvas */}
-          <div className="flex-1 overflow-y-auto p-8 flex justify-center">
-            <div className="paper-page bg-white shadow-xl border border-slate-300" style={{ width: '816px', minHeight: '1056px', padding: '96px' }}>
-              <div
-                ref={editorRef}
-                contentEditable
-                suppressContentEditableWarning
-                onInput={handleEditorInput}
-                onKeyUp={checkActiveFormats}
-                onMouseUp={checkActiveFormats}
-                className="min-h-[864px] outline-none text-slate-900 leading-relaxed font-sans"
-              />
-            </div>
+{/* Canvas Container with Dynamic Pages */}
+          <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
+            {Array.from({ length: totalPages }).map((_, index) => (
+              <div 
+                key={index} 
+                className="paper-page bg-white shadow-xl border border-slate-300 transition-all duration-200 relative" 
+                style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
+              >
+                {/* Page Content editable area */}
+                {index === 0 && (
+                  <div
+                    ref={editorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={handleEditorInput}
+                    onKeyUp={checkActiveFormats}
+                    onMouseUp={checkActiveFormats}
+                    className="min-h-[864px] outline-none text-slate-900 leading-relaxed font-sans"
+                  />
+                )}
+
+                {/* Page Number Footer */}
+                <div className="absolute bottom-6 right-8 text-xs font-semibold text-slate-400 no-print select-none">
+                  Page {index + 1} of {totalPages}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
       </div>
     </div>
   );
