@@ -533,51 +533,43 @@ const calculatePages = () => {
           </div>
 
 {/* Canvas Container with Paginated Visual Sheets */}
-<div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
-  <div 
-    className="paper-document flex flex-col gap-8 items-center"
-    style={{ width: '816px' }}
-  >
-    {Array.from({ length: totalPages }).map((_, index) => (
-      <div 
-        key={index} 
-        className="paper-page bg-white shadow-xl border border-slate-300 relative" 
-        style={{ width: '816px', height: '1056px', padding: '96px 96px 64px 96px' }}
-      >
-        {/* Render editable area inside Page 1 while allowing content flow */}
-        {index === 0 && (
-          <div
-            ref={editorRef}
-            contentEditable
-            suppressContentEditableWarning
-            onInput={handleEditorInput}
-            onKeyUp={checkActiveFormats}
-            onMouseUp={checkActiveFormats}
-            className="outline-none text-slate-900 font-sans"
-            style={{ 
-              minHeight: '896px', 
-              lineHeight: '1.6',
-              fontSize: '16px'
-            }}
-          />
-        )}
+          <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
+            <div 
+              className="paper-document flex flex-col gap-8 items-center"
+              style={{ width: '816px' }}
+            >
+              {Array.from({ length: totalPages }).map((_, index) => (
+                <div 
+                  key={index} 
+                  className="paper-page bg-white shadow-xl border border-slate-300 relative" 
+                  style={{ width: '816px', height: '1056px', padding: '96px 96px 64px 96px' }}
+                >
+                  {/* Render editable area inside Page 1 while allowing content flow */}
+                  {index === 0 && (
+                    <div
+                      ref={editorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onInput={handleEditorInput}
+                      onKeyUp={checkActiveFormats}
+                      onMouseUp={checkActiveFormats}
+                      className="outline-none text-slate-900 font-sans"
+                      style={{ 
+                        minHeight: '896px', 
+                        lineHeight: '1.6',
+                        fontSize: '16px'
+                      }}
+                    />
+                  )}
 
-        {/* Page Number Footer */}
-        <div className="absolute bottom-4 right-8 text-xs font-semibold text-slate-400 no-print select-none">
-          Page {index + 1} of {totalPages}
-        </div>
-      </div>
-    ))}
-  </div>
-</div>
-
-      {/* Page Number Footer */}
-      <div className="absolute bottom-6 right-8 text-xs font-semibold text-slate-400 no-print select-none z-0">
-        Page {index + 1} of {totalPages}
-      </div>
-    </div>
-  ))}
-</div>
+                  {/* Page Number Footer */}
+                  <div className="absolute bottom-4 right-8 text-xs font-semibold text-slate-400 no-print select-none">
+                    Page {index + 1} of {totalPages}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
         </div>
       </div>
