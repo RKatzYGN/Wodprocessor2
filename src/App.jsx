@@ -200,14 +200,14 @@ export default function App() {
     triggerAutoSave(updatedHtml, title);
   };
 
- const calculatePages = () => {
+const calculatePages = () => {
   if (!editorRef.current) return;
-  // Standard printable page height in pixels (11 inches at 96 DPI minus margins)
-  const pageHeight = 864; 
-  const currentContentHeight = editorRef.current.scrollHeight;
+  // Fixed printable canvas height (11 inches - margins)
+  const singlePageHeight = 896; 
+  const currentHeight = editorRef.current.scrollHeight;
   
-  // Calculate total required pages based on content height
-  const neededPages = Math.max(1, Math.ceil(currentContentHeight / pageHeight));
+  // Calculate total pages required
+  const neededPages = Math.max(1, Math.ceil(currentHeight / singlePageHeight));
   if (neededPages !== totalPages) {
     setTotalPages(neededPages);
   }
@@ -351,14 +351,11 @@ export default function App() {
   // --- Main Editor Screen ---
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
-    <style>{`
+   <style>{`
   @media print {
-    /* Hide all application UI */
     header, sidebar, .no-print, .toolbar-container { 
       display: none !important; 
     }
-
-    /* Force background and root container to print colors */
     body, html, #root, .main-content { 
       background: white !important; 
       overflow: visible !important; 
@@ -366,26 +363,21 @@ export default function App() {
       margin: 0 !important;
       padding: 0 !important;
     }
-
-    /* Set exact US Letter page dimensions for print */
     @page {
       size: 8.5in 11in;
       margin: 0;
     }
-
     .paper-page { 
       box-shadow: none !important; 
       margin: 0 auto !important; 
       width: 8.5in !important; 
-      min-height: 11in !important; 
+      height: 11in !important; 
       border: none !important; 
       padding: 1in !important; 
       page-break-after: always; 
       page-break-inside: avoid;
       background: white !important;
     }
-
-    /* Hide scrollbars during print execution */
     ::-webkit-scrollbar { 
       display: none !important; 
     }
@@ -540,27 +532,44 @@ export default function App() {
             </label>
           </div>
 
-{/* Canvas Container with Dynamic Pages */}
+{/* Canvas Container with Paginated Visual Sheets */}
 <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
-  {Array.from({ length: totalPages }).map((_, index) => (
-    <div 
-      key={index} 
-      className="paper-page bg-white shadow-xl border border-slate-300 relative overflow-hidden" 
-      style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
-    >
-      {/* Page Content Editable Area - Rendered strictly on Page 1 */}
-      {index === 0 && (
-        <div
-          ref={editorRef}
-          contentEditable
-          suppressContentEditableWarning
-          onInput={handleEditorInput}
-          onKeyUp={checkActiveFormats}
-          onMouseUp={checkActiveFormats}
-          className="min-h-[864px] outline-none text-slate-900 leading-relaxed font-sans relative z-10"
-          style={{ width: '100%', height: '100%' }}
-        />
-      )}
+  <div 
+    className="paper-document flex flex-col gap-8 items-center"
+    style={{ width: '816px' }}
+  >
+    {Array.from({ length: totalPages }).map((_, index) => (
+      <div 
+        key={index} 
+        className="paper-page bg-white shadow-xl border border-slate-300 relative" 
+        style={{ width: '816px', height: '1056px', padding: '96px 96px 64px 96px' }}
+      >
+        {/* Render editable area inside Page 1 while allowing content flow */}
+        {index === 0 && (
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={handleEditorInput}
+            onKeyUp={checkActiveFormats}
+            onMouseUp={checkActiveFormats}
+            className="outline-none text-slate-900 font-sans"
+            style={{ 
+              minHeight: '896px', 
+              lineHeight: '1.6',
+              fontSize: '16px'
+            }}
+          />
+        )}
+
+        {/* Page Number Footer */}
+        <div className="absolute bottom-4 right-8 text-xs font-semibold text-slate-400 no-print select-none">
+          Page {index + 1} of {totalPages}
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
 
       {/* Page Number Footer */}
       <div className="absolute bottom-6 right-8 text-xs font-semibold text-slate-400 no-print select-none z-0">
