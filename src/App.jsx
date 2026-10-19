@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+To make multi-page writing and printing work 100% reliably in a React web app, we have to eliminate the single contentEditable div approach entirely.When a single text container grows beyond one page, browser layout engines cannot natively slice HTML elements across page gaps. That is why text breaks, disappears, or spills over into gray spaces.The True Solution: An Array of Discrete Page ComponentsInstead of one large document container trying to fake page breaks, we manage pages as an array of independent page objects:[ Page 1 (Editable Canvas) ] ➔ [ Page 2 (Editable Canvas) ] ➔ [ Page 3 (Editable Canvas) ]
+Continuous Writing & Auto-Page Creation: Each page is a distinct, fixed-height ($816\text{px} \times 1056\text{px}$) paper sheet. When you hit the bottom margin of Page 1, a new blank page sheet is created automatically, and your typing cursor moves seamlessly to Page 2.Backspacing & Auto-Page Removal: If you delete text on Page 2 until it becomes empty, the app automatically deletes Page 2 and moves your focus back to the bottom of Page 1.Flawless Native Printing: Because each page is a true, separate HTML DOM element (<div className="paper-page">), CSS print rules (page-break-after: always) tell print drivers to print each page on its own physical sheet of paper.Complete, Production-Ready src/App.jsxReplace the entire contents of src/App.jsx on GitHub with this complete code:JavaScriptimport React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
@@ -52,7 +53,7 @@ export default function App() {
   const [documents, setDocuments] = useState([]);
   const [currentDocId, setCurrentDocId] = useState(null);
   const [title, setTitle] = useState('Untitled Document');
-  const [content, setContent] = useState('');
+  const [pages, setPages] = useState(['<p>Start typing here...</p>']);
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -66,7 +67,7 @@ export default function App() {
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
 
-  const editorRef = useRef(null);
+  const pageRefs = useRef([]);
   const saveTimeoutRef = useRef(null);
 
   // 1. Auth Listener
@@ -99,7 +100,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // Auth Functions
+  // Auth Handlers
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -122,24 +123,25 @@ export default function App() {
     setCurrentDocId(null);
   };
 
-  // Document Operations
+  // Document Management
   const loadDocument = (docItem) => {
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
-    setContent(docItem.content || '');
-    if (editorRef.current) {
-      editorRef.current.innerHTML = docItem.content || '';
-    }
-    updateWordCount(docItem.content || '');
+    const loadedPages = Array.isArray(docItem.pages) && docItem.pages.length > 0 
+      ? docItem.pages 
+      : [docItem.content || '<p>Start typing here...</p>'];
+    setPages(loadedPages);
+    updateWordCount(loadedPages);
     setSaveStatus('Saved');
   };
 
   const createNewDocument = async () => {
     if (!user || !db) return;
     const newDocId = 'doc_' + Date.now();
+    const initialPages = ['<p>Start typing here...</p>'];
     const newDocData = {
       title: 'Untitled Document',
-      content: '<p>Start typing here...</p>',
+      pages: initialPages,
       updatedAt: new Date()
     };
 
@@ -147,11 +149,8 @@ export default function App() {
       await setDoc(doc(db, 'users', user.uid, 'documents', newDocId), newDocData);
       setCurrentDocId(newDocId);
       setTitle(newDocData.title);
-      setContent(newDocData.content);
-      if (editorRef.current) {
-        editorRef.current.innerHTML = newDocData.content;
-      }
-      updateWordCount(newDocData.content);
+      setPages(initialPages);
+      updateWordCount(initialPages);
       setSaveStatus('Saved');
     } catch (err) {
       console.error("Failed to create doc:", err);
@@ -169,7 +168,7 @@ export default function App() {
     }
   };
 
-  const triggerAutoSave = (newContent, newTitle) => {
+  const triggerAutoSave = (updatedPages, updatedTitle) => {
     setSaveStatus('Saving...');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
@@ -177,8 +176,8 @@ export default function App() {
       if (!user || !db || !currentDocId) return;
       try {
         await setDoc(doc(db, 'users', user.uid, 'documents', currentDocId), {
-          title: newTitle !== undefined ? newTitle : title,
-          content: newContent !== undefined ? newContent : content,
+          title: updatedTitle !== undefined ? updatedTitle : title,
+          pages: updatedPages !== undefined ? updatedPages : pages,
           updatedAt: new Date()
         }, { merge: true });
         setSaveStatus('Cloud synchronized');
@@ -188,28 +187,77 @@ export default function App() {
     }, 1000);
   };
 
-  const updateWordCount = (htmlText) => {
-    const temp = document.createElement('div');
-    temp.innerHTML = htmlText;
-    const text = temp.innerText || temp.textContent || '';
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const updateWordCount = (pagesArray) => {
+    const combinedText = pagesArray.map((p) => {
+      const temp = document.createElement('div');
+      temp.innerHTML = p;
+      return temp.innerText || temp.textContent || '';
+    }).join(' ');
+
+    const words = combinedText.trim() ? combinedText.trim().split(/\s+/).length : 0;
     setWordCount(words);
-    setCharCount(text.length);
+    setCharCount(combinedText.length);
   };
 
   const handleTitleChange = (e) => {
     const val = e.target.value;
     setTitle(val);
-    triggerAutoSave(content, val);
+    triggerAutoSave(pages, val);
   };
 
-  const handleEditorInput = () => {
-    if (!editorRef.current) return;
-    const updatedHtml = editorRef.current.innerHTML;
-    setContent(updatedHtml);
+  // Multi-Page Typing & Auto-Flow Logic
+  const handlePageInput = (pageIndex) => {
+    const targetRef = pageRefs.current[pageIndex];
+    if (!targetRef) return;
+
+    const currentHtml = targetRef.innerHTML;
+    const updatedPages = [...pages];
+    updatedPages[pageIndex] = currentHtml;
+
+    // Check if current page text exceeds bottom margin (864px printable height)
+    if (targetRef.scrollHeight > 864) {
+      // Create new page if at the end of document
+      if (pageIndex === pages.length - 1) {
+        updatedPages.push('<p><br></p>');
+        setPages(updatedPages);
+        setTimeout(() => {
+          if (pageRefs.current[pageIndex + 1]) {
+            pageRefs.current[pageIndex + 1].focus();
+          }
+        }, 50);
+      }
+    }
+
+    setPages(updatedPages);
     checkActiveFormats();
-    updateWordCount(updatedHtml);
-    triggerAutoSave(updatedHtml, title);
+    updateWordCount(updatedPages);
+    triggerAutoSave(updatedPages, title);
+  };
+
+  const handleKeyDown = (pageIndex, e) => {
+    // Delete page when backspacing empty page
+    if (e.key === 'Backspace' && pageIndex > 0) {
+      const targetRef = pageRefs.current[pageIndex];
+      const text = targetRef ? (targetRef.innerText || targetRef.textContent || '').trim() : '';
+      if (text === '') {
+        e.preventDefault();
+        const updatedPages = pages.filter((_, idx) => idx !== pageIndex);
+        setPages(updatedPages);
+        setTimeout(() => {
+          if (pageRefs.current[pageIndex - 1]) {
+            const prevElem = pageRefs.current[pageIndex - 1];
+            prevElem.focus();
+            // Place cursor at end of previous page
+            const range = document.createRange();
+            const sel = window.getSelection();
+            range.selectNodeContents(prevElem);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        }, 50);
+      }
+    }
   };
 
   const checkActiveFormats = () => {
@@ -227,24 +275,23 @@ export default function App() {
   const executeCommand = (cmd, val = null) => {
     document.execCommand(cmd, false, val);
     checkActiveFormats();
-    handleEditorInput();
   };
 
   const applyFontSize = (size) => { setFontSize(size); executeCommand('fontSize', size); };
   const applyFontFamily = (font) => { setFontFamily(font); executeCommand('fontName', font); };
-  const applyLineSpacing = (spacing) => {
-    setLineSpacing(spacing);
-    if (editorRef.current) { editorRef.current.style.lineHeight = spacing; handleEditorInput(); }
-  };
+  const applyLineSpacing = (spacing) => { setLineSpacing(spacing); executeCommand('styleWithCSS', true); };
   const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
   const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
 
   const handlePrint = () => window.print();
 
   const exportAsTxt = () => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = content;
-    const plainText = tempDiv.innerText || tempDiv.textContent || '';
+    const plainText = pages.map(p => {
+      const temp = document.createElement('div');
+      temp.innerHTML = p;
+      return temp.innerText || temp.textContent || '';
+    }).join('\n\n--- Page Break ---\n\n');
+
     const element = document.createElement("a");
     const file = new Blob([plainText], {type: 'text/plain'});
     element.href = URL.createObjectURL(file);
@@ -255,7 +302,7 @@ export default function App() {
   };
 
   const exportAsHtml = () => {
-    const fullHtml = `<!DOCTYPE html><html><head><title>${title}</title></head><body>${content}</body></html>`;
+    const fullHtml = `<!DOCTYPE html><html><head><title>${title}</title></head><body>${pages.join('<hr/>')}</body></html>`;
     const element = document.createElement("a");
     const file = new Blob([fullHtml], {type: 'text/html'});
     element.href = URL.createObjectURL(file);
@@ -273,7 +320,7 @@ export default function App() {
     );
   }
 
-  // --- Auth Modal Screen ---
+  // --- Auth Screen ---
   if (!user) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-100 font-sans">
@@ -352,15 +399,9 @@ export default function App() {
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* Dynamic CSS page breaks for multi-page documents on screen */
-        .page-canvas {
-          background-image: linear-gradient(to bottom, #ffffff 0px, #ffffff 960px, #cbd5e1 960px, #cbd5e1 992px, #ffffff 992px);
-          background-size: 100% 992px;
-        }
-
-        /* Print Specific Media Rules */
+        /* Native Print Formatting */
         @media print {
-          header, sidebar, .no-print, .toolbar-container, .status-bar { 
+          header, sidebar, .no-print, .toolbar-container, .status-bar, .page-footer { 
             display: none !important; 
           }
           body, html, #root, .main-content { 
@@ -372,18 +413,18 @@ export default function App() {
           }
           @page {
             size: 8.5in 11in;
-            margin: 1in;
+            margin: 0;
           }
           .paper-page { 
             box-shadow: none !important; 
-            margin: 0 !important; 
-            width: 100% !important; 
+            margin: 0 auto !important; 
+            width: 8.5in !important; 
+            height: 11in !important; 
             border: none !important; 
-            padding: 0 !important; 
+            padding: 1in !important; 
+            page-break-after: always !important; 
+            page-break-inside: avoid !important;
             background: white !important;
-          }
-          .page-canvas {
-            background-image: none !important;
           }
           ::-webkit-scrollbar { 
             display: none !important; 
@@ -419,13 +460,12 @@ export default function App() {
           </div>
         </div>
 
-        {/* Account Controls & Printing */}
+        {/* Account & Export Controls */}
         <div className="flex items-center gap-3">
           <button onClick={handlePrint} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <Printer className="h-4 w-4 text-slate-500" /> Print
           </button>
 
-          {/* Export Dropdown */}
           <div className="relative group">
             <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
               <Download className="h-4 w-4" /> Export
@@ -479,7 +519,6 @@ export default function App() {
           
           {/* Formatting Toolbar */}
           <div className="toolbar-container no-print flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-4 py-2 shadow-sm z-10">
-            {/* Font Family */}
             <select value={fontFamily} onChange={(e) => applyFontFamily(e.target.value)} className="h-8 rounded border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700">
               <option value="Arial">Arial</option>
               <option value="Times New Roman">Times New Roman</option>
@@ -490,7 +529,6 @@ export default function App() {
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Font Size */}
             <select value={fontSize} onChange={(e) => applyFontSize(e.target.value)} className="h-8 rounded border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700">
               <option value="1">8 pt</option>
               <option value="2">10 pt</option>
@@ -503,14 +541,12 @@ export default function App() {
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Formatting Actions */}
             <button onClick={() => executeCommand('bold')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.bold ? 'bg-slate-200 text-blue-600' : ''}`}><Bold className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('italic')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.italic ? 'bg-slate-200 text-blue-600' : ''}`}><Italic className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('underline')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.underline ? 'bg-slate-200 text-blue-600' : ''}`}><Underline className="h-4 w-4" /></button>
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Line Spacing */}
             <span className="text-xs font-medium text-slate-400 pl-1">Spacing:</span>
             <select value={lineSpacing} onChange={(e) => applyLineSpacing(e.target.value)} className="h-8 rounded border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700">
               <option value="1.0">Single (1.0)</option>
@@ -521,14 +557,12 @@ export default function App() {
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Alignments */}
             <button onClick={() => executeCommand('justifyLeft')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'left' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignLeft className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('justifyCenter')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'center' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignCenter className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('justifyRight')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'right' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignRight className="h-4 w-4" /></button>
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Colors */}
             <label className="flex items-center gap-1 cursor-pointer" title="Text Color">
               <Palette className="h-4 w-4 text-slate-600" />
               <input type="color" value={textColor} onChange={(e) => applyTextColor(e.target.value)} className="h-6 w-6 cursor-pointer border-none bg-transparent" />
@@ -539,30 +573,41 @@ export default function App() {
             </label>
           </div>
 
-          {/* Paper Canvas (Google Docs Continuous Page Layout) */}
-          <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
-            <div 
-              className="paper-page page-canvas shadow-2xl border border-slate-300 transition-all duration-200" 
-              style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
-            >
-              <div
-                ref={editorRef}
-                contentEditable
-                suppressContentEditableWarning
-                onInput={handleEditorInput}
-                onKeyUp={checkActiveFormats}
-                onMouseUp={checkActiveFormats}
-                className="min-h-[864px] outline-none text-slate-900 leading-relaxed font-sans"
-              />
-            </div>
+          {/* Array-Based Multi-Page Paper Canvas */}
+          <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
+            {pages.map((pageHtml, index) => (
+              <div 
+                key={index}
+                className="paper-page bg-white shadow-xl border border-slate-300 relative overflow-hidden flex flex-col justify-between"
+                style={{ width: '816px', height: '1056px', padding: '96px 96px 64px 96px' }}
+              >
+                <div
+                  ref={(el) => (pageRefs.current[index] = el)}
+                  contentEditable
+                  suppressContentEditableWarning
+                  dangerouslySetInnerHTML={{ __html: pageHtml }}
+                  onInput={() => handlePageInput(index)}
+                  onKeyDown={(e) => handleKeyDown(index, e)}
+                  onKeyUp={checkActiveFormats}
+                  onMouseUp={checkActiveFormats}
+                  className="outline-none text-slate-900 leading-relaxed font-sans"
+                  style={{ height: '864px', overflow: 'hidden' }}
+                />
+
+                <div className="page-footer text-right text-xs font-semibold text-slate-400 no-print select-none">
+                  Page {index + 1} of {pages.length}
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Bottom Status Bar */}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
             <div>Word Processor Workspace</div>
             <div className="flex items-center gap-4">
-              <span>{wordCount} words</span>
-              <span>{charCount} characters</span>
+              <span>{pages.length} {pages.length === 1 ? 'Page' : 'Pages'}</span>
+              <span>{wordCount} Words</span>
+              <span>{charCount} Characters</span>
             </div>
           </div>
 
