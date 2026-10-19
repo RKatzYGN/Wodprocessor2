@@ -30,7 +30,7 @@ const firebaseConfig = {
   projectId: "simple-word-processor-2",
   storageBucket: "simple-word-processor-2.firebasestorage.app",
   messagingSenderId: "188052684856",
-  appId: "1:188052684856:web:fd1901b30527abf61ea6cd"
+  appId: "1:188052684856:web:fd1901b30527abf61ea6cd",
 };
 
 const app = initializeApp(firebaseConfig);
