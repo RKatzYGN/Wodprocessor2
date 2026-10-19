@@ -56,11 +56,11 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
-  const [pageCount, setPageCount] = useState(1);
+  const [pageChunks, setPageChunks] = useState(['<p>Start typing here...</p>']);
 
   const saveTimeoutRef = useRef(null);
 
-  // Initialize TipTap Rich Text Engine
+  // Initialize TipTap Engine
   const editor = useEditor({
     extensions: [StarterKit],
     content: '<p>Start typing here...</p>',
@@ -70,18 +70,48 @@ export default function App() {
       setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0);
       setCharCount(text.length);
 
-      // Measure height for visual page count
-      const element = editor.options.element;
-      if (element) {
-        const height = element.scrollHeight;
-        setPageCount(Math.max(1, Math.ceil(height / 864)));
-      }
-
+      // Split content into physical 864px page chunks dynamically
+      repaginateContent(html);
       triggerAutoSave(html, title);
     },
   });
 
-  // 1. Auth Listener
+  const repaginateContent = (fullHtml) => {
+    const tempDiv = document.createElement('div');
+    tempDiv.style.width = '816px';
+    tempDiv.style.padding = '96px';
+    tempDiv.style.visibility = 'hidden';
+    tempDiv.style.position = 'absolute';
+    tempDiv.innerHTML = fullHtml;
+    document.body.appendChild(tempDiv);
+
+    const children = Array.from(tempDiv.children);
+    const chunks = [];
+    let currentChunk = '';
+    let currentHeight = 0;
+    const maxHeightPerPage = 864; // Max height for 11in page with 1in padding
+
+    children.forEach((child) => {
+      const childHeight = child.offsetHeight || 24;
+      if (currentHeight + childHeight > maxHeightPerPage && currentChunk !== '') {
+        chunks.push(currentChunk);
+        currentChunk = child.outerHTML;
+        currentHeight = childHeight;
+      } else {
+        currentChunk += child.outerHTML;
+        currentHeight += childHeight;
+      }
+    });
+
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+
+    document.body.removeChild(tempDiv);
+    setPageChunks(chunks.length > 0 ? chunks : ['<p>Start typing here...</p>']);
+  };
+
+  // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -90,7 +120,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Load Firestore Documents
+  // Sync Documents with Firestore
   useEffect(() => {
     if (!user || !db) return;
 
@@ -111,7 +141,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // Auth Functions
+  // Auth Operations
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -142,6 +172,7 @@ export default function App() {
     if (editor) {
       editor.commands.setContent(contentHtml);
     }
+    repaginateContent(contentHtml);
     setSaveStatus('Saved');
   };
 
@@ -162,6 +193,7 @@ export default function App() {
       if (editor) {
         editor.commands.setContent(initialContent);
       }
+      repaginateContent(initialContent);
       setSaveStatus('Saved');
     } catch (err) {
       console.error("Failed to create doc:", err);
@@ -313,28 +345,26 @@ export default function App() {
     );
   }
 
-  // --- Main Workspace ---
+  // --- Main Editor Screen ---
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* Continuous Page Background Styling */
         .tiptap {
           outline: none !important;
           min-height: 864px;
         }
 
-        .paper-sheet {
-          background-color: #ffffff !important;
-          background-image: linear-gradient(to bottom, transparent 1054px, #cbd5e1 1054px, #cbd5e1 1056px) !important;
-          background-size: 100% 1056px !important;
-          min-height: 1056px !important;
-          height: auto !important;
+        /* Physical Page Card Styles */
+        .page-card {
           width: 816px !important;
+          height: 1056px !important;
+          padding: 96px !important;
+          background-color: #ffffff !important;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
         }
 
-        /* Native Print Formatting */
         @media print {
-          header, sidebar, .no-print, .toolbar-container, .status-bar { 
+          header, sidebar, .no-print, .toolbar-container, .status-bar, .page-number { 
             display: none !important; 
           }
           body, html, #root, .main-content { 
@@ -346,16 +376,17 @@ export default function App() {
           }
           @page {
             size: 8.5in 11in;
-            margin: 1in;
+            margin: 0;
           }
-          .paper-sheet { 
+          .page-card { 
             box-shadow: none !important; 
-            margin: 0 !important; 
-            width: 100% !important; 
-            border: none !important; 
-            padding: 0 !important; 
+            margin: 0 auto !important; 
+            width: 8.5in !important; 
+            height: 11in !important; 
+            padding: 1in !important; 
+            page-break-after: always !important; 
+            page-break-inside: avoid !important;
             background: white !important;
-            background-image: none !important;
           }
         }
       `}</style>
@@ -460,18 +491,27 @@ export default function App() {
             </button>
           </div>
 
-          {/* TipTap Document Canvas */}
-          <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
-            <div className="paper-sheet shadow-xl border border-slate-300 p-24">
-              <EditorContent editor={editor} />
-            </div>
+          {/* Multi-Page Canvas Layout */}
+          <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
+            {pageChunks.map((chunkHtml, idx) => (
+              <div key={idx} className="page-card rounded border border-slate-300 relative flex flex-col justify-between">
+                {idx === 0 ? (
+                  <EditorContent editor={editor} />
+                ) : (
+                  <div dangerouslySetInnerHTML={{ __html: chunkHtml }} className="text-slate-900 leading-relaxed font-sans min-h-[864px]" />
+                )}
+                <div className="page-number text-right text-xs text-slate-400 no-print select-none pt-4">
+                  Page {idx + 1} of {pageChunks.length}
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Bottom Status Bar */}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
-            <div>TipTap Engine Workspace</div>
+            <div>TipTap Multi-Page Workspace</div>
             <div className="flex items-center gap-4">
-              <span>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
+              <span>{pageChunks.length} {pageChunks.length === 1 ? 'Page' : 'Pages'}</span>
               <span>{wordCount} Words</span>
               <span>{charCount} Characters</span>
             </div>
