@@ -8,10 +8,10 @@ import {
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  onAuthStateChanged,
-  signOut,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword
+  onAuthStateChanged, 
+  signOut, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword 
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -19,11 +19,11 @@ import {
   doc, 
   setDoc, 
   deleteDoc, 
-  onSnapshot
+  onSnapshot 
 } from 'firebase/firestore';
 
 // ----------------------------------------------------------------------
-// Firebase Credentials
+// Your Firebase Configuration
 // ----------------------------------------------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyBwURdUU69kkRQTIXUimC-ICc5jE4W3E-w",
@@ -31,7 +31,7 @@ const firebaseConfig = {
   projectId: "simple-word-processor-2",
   storageBucket: "simple-word-processor-2.firebasestorage.app",
   messagingSenderId: "188052684856",
-  appId: "1:188052684856:web:fd1901b30527abf61ea6cd",
+  appId: "1:188052684856:web:fd1901b30527abf61ea6cd"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -41,7 +41,7 @@ const db = getFirestore(app);
 export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  
+
   // Auth State
   const [isRegistering, setIsRegistering] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
@@ -55,7 +55,7 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Stats & Formatting
+  // Stats & Formatting State
   const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, align: 'left' });
   const [fontFamily, setFontFamily] = useState('Arial');
   const [fontSize, setFontSize] = useState('3');
@@ -69,7 +69,7 @@ export default function App() {
   const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
-  // 1. Monitor Auth State
+  // 1. Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -78,7 +78,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Fetch User Documents Real-time
+  // 2. Real-Time Firestore Synchronization
   useEffect(() => {
     if (!user || !db) return;
 
@@ -99,7 +99,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // Auth Functions
+  // Auth Handlers
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -122,7 +122,7 @@ export default function App() {
     setCurrentDocId(null);
   };
 
-  // Document Functions
+  // Document Management
   const loadDocument = (docItem) => {
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
@@ -282,6 +282,7 @@ export default function App() {
     );
   }
 
+  // --- Auth Screen ---
   if (!user) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-100 font-sans">
@@ -356,10 +357,11 @@ export default function App() {
     );
   }
 
+  // --- Main Editor Screen ---
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* Dynamic On-Screen Page Gaps */
+        /* Dynamic On-Screen Visual Page Break Dividers */
         .paper-canvas {
           background-image: linear-gradient(to bottom, #ffffff 0px, #ffffff 864px, #cbd5e1 864px, #cbd5e1 896px, #ffffff 896px);
           background-size: 100% 896px;
@@ -570,4 +572,3 @@ export default function App() {
     </div>
   );
 }
-
