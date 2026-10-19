@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 
 // ----------------------------------------------------------------------
-// Your Firebase Configuration
+// Firebase Configuration
 // ----------------------------------------------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyBwURdUU69kkRQTIXUimC-ICc5jE4W3E-w",
@@ -361,10 +361,11 @@ export default function App() {
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* Dynamic On-Screen Visual Page Break Dividers */
+        /* Dynamic White Paper Extension with Gray Divider Lines Every Page Height (1056px) */
         .paper-canvas {
-          background-image: linear-gradient(to bottom, #ffffff 0px, #ffffff 864px, #cbd5e1 864px, #cbd5e1 896px, #ffffff 896px);
-          background-size: 100% 896px;
+          background-color: #ffffff !important;
+          background-image: linear-gradient(to bottom, transparent 1054px, #cbd5e1 1054px, #cbd5e1 1056px) !important;
+          background-size: 100% 1056px !important;
         }
 
         /* Native Print Formatting */
@@ -539,11 +540,11 @@ export default function App() {
             </label>
           </div>
 
-          {/* Paper Canvas */}
+          {/* Paper Canvas (White Sheet Expands Automatically) */}
           <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
             <div 
-              className="paper-canvas bg-white shadow-xl border border-slate-300 transition-all duration-200"
-              style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
+              className="paper-canvas shadow-xl border border-slate-300 transition-all duration-200"
+              style={{ width: '816px', minHeight: '1056px', padding: '96px', height: 'auto' }}
             >
               <div
                 ref={editorRef}
