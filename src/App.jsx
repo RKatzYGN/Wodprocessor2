@@ -69,7 +69,7 @@ export default function App() {
   const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
-  // 1. Auth State Listener
+  // 1. Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -122,7 +122,7 @@ export default function App() {
     setCurrentDocId(null);
   };
 
-  // Document Management
+  // Document Operations
   const loadDocument = (docItem) => {
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
@@ -361,14 +361,17 @@ export default function App() {
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* Dynamic White Paper Extension with Gray Divider Lines Every Page Height (1056px) */
-        .paper-canvas {
+        /* Infinite White Paper background with 2px grey divider line every 1056px */
+        .paper-canvas-sheet {
           background-color: #ffffff !important;
           background-image: linear-gradient(to bottom, transparent 1054px, #cbd5e1 1054px, #cbd5e1 1056px) !important;
           background-size: 100% 1056px !important;
+          min-height: 1056px !important;
+          height: auto !important;
+          width: 816px !important;
         }
 
-        /* Native Print Formatting */
+        /* Print Media Styles */
         @media print {
           header, sidebar, .no-print, .toolbar-container, .status-bar { 
             display: none !important; 
@@ -384,7 +387,7 @@ export default function App() {
             size: 8.5in 11in;
             margin: 1in;
           }
-          .paper-canvas { 
+          .paper-canvas-sheet { 
             box-shadow: none !important; 
             margin: 0 !important; 
             width: 100% !important; 
@@ -540,12 +543,9 @@ export default function App() {
             </label>
           </div>
 
-          {/* Paper Canvas (White Sheet Expands Automatically) */}
+          {/* Paper Canvas (Expanding Paper Sheet) */}
           <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
-            <div 
-              className="paper-canvas shadow-xl border border-slate-300 transition-all duration-200"
-              style={{ width: '816px', minHeight: '1056px', padding: '96px', height: 'auto' }}
-            >
+            <div className="paper-canvas-sheet shadow-xl border border-slate-300 p-24">
               <div
                 ref={editorRef}
                 contentEditable
