@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
 import { 
   FileText, Plus, Trash2, Printer, Download,
-  Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
-  FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode
+  Bold, Italic, FolderOpen, Check, Clock, LogOut, Key, Mail, FileCode
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -54,20 +54,32 @@ export default function App() {
   const [title, setTitle] = useState('Untitled Document');
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-
-  // Stats & Formatting State
-  const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, align: 'left' });
-  const [fontFamily, setFontFamily] = useState('Arial');
-  const [fontSize, setFontSize] = useState('3');
-  const [lineSpacing, setLineSpacing] = useState('1.15');
-  const [textColor, setTextColor] = useState('#000000');
-  const [highlightColor, setHighlightColor] = useState('#ffffff');
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [pageCount, setPageCount] = useState(1);
 
-  const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
+
+  // Initialize TipTap Rich Text Engine
+  const editor = useEditor({
+    extensions: [StarterKit],
+    content: '<p>Start typing here...</p>',
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+      const text = editor.getText();
+      setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0);
+      setCharCount(text.length);
+
+      // Measure height for visual page count
+      const element = editor.options.element;
+      if (element) {
+        const height = element.scrollHeight;
+        setPageCount(Math.max(1, Math.ceil(height / 864)));
+      }
+
+      triggerAutoSave(html, title);
+    },
+  });
 
   // 1. Auth Listener
   useEffect(() => {
@@ -78,7 +90,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-Time Firestore Synchronization
+  // 2. Load Firestore Documents
   useEffect(() => {
     if (!user || !db) return;
 
@@ -99,7 +111,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // Auth Handlers
+  // Auth Functions
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -127,10 +139,9 @@ export default function App() {
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
     const contentHtml = docItem.content || '<p>Start typing here...</p>';
-    if (editorRef.current) {
-      editorRef.current.innerHTML = contentHtml;
+    if (editor) {
+      editor.commands.setContent(contentHtml);
     }
-    updateStats(contentHtml);
     setSaveStatus('Saved');
   };
 
@@ -148,10 +159,9 @@ export default function App() {
       await setDoc(doc(db, 'users', user.uid, 'documents', newDocId), newDocData);
       setCurrentDocId(newDocId);
       setTitle(newDocData.title);
-      if (editorRef.current) {
-        editorRef.current.innerHTML = initialContent;
+      if (editor) {
+        editor.commands.setContent(initialContent);
       }
-      updateStats(initialContent);
       setSaveStatus('Saved');
     } catch (err) {
       console.error("Failed to create doc:", err);
@@ -188,71 +198,17 @@ export default function App() {
     }, 1000);
   };
 
-  const updateStats = (html) => {
-    const temp = document.createElement('div');
-    temp.innerHTML = html || '';
-    const text = temp.innerText || temp.textContent || '';
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    setWordCount(words);
-    setCharCount(text.length);
-
-    if (editorRef.current) {
-      const currentHeight = editorRef.current.scrollHeight;
-      const pages = Math.max(1, Math.ceil(currentHeight / 864));
-      setPageCount(pages);
-    }
-  };
-
   const handleTitleChange = (e) => {
     const val = e.target.value;
     setTitle(val);
-    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
+    const contentHtml = editor ? editor.getHTML() : '';
     triggerAutoSave(contentHtml, val);
   };
-
-  const handleEditorInput = () => {
-    if (!editorRef.current) return;
-    const contentHtml = editorRef.current.innerHTML;
-    updateStats(contentHtml);
-    checkActiveFormats();
-    triggerAutoSave(contentHtml, title);
-  };
-
-  const checkActiveFormats = () => {
-    if (!document.getSelection) return;
-    setActiveFormats({
-      bold: document.queryCommandState('bold'),
-      italic: document.queryCommandState('italic'),
-      underline: document.queryCommandState('underline'),
-      align: document.queryCommandState('justifyLeft') ? 'left' :
-             document.queryCommandState('justifyCenter') ? 'center' :
-             document.queryCommandState('justifyRight') ? 'right' : 'left'
-    });
-  };
-
-  const executeCommand = (cmd, val = null) => {
-    document.execCommand(cmd, false, val);
-    checkActiveFormats();
-    handleEditorInput();
-  };
-
-  const applyFontSize = (size) => { setFontSize(size); executeCommand('fontSize', size); };
-  const applyFontFamily = (font) => { setFontFamily(font); executeCommand('fontName', font); };
-  const applyLineSpacing = (spacing) => {
-    setLineSpacing(spacing);
-    if (editorRef.current) { editorRef.current.style.lineHeight = spacing; handleEditorInput(); }
-  };
-  const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
-  const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
 
   const handlePrint = () => window.print();
 
   const exportAsTxt = () => {
-    const html = editorRef.current ? editorRef.current.innerHTML : '';
-    const temp = document.createElement('div');
-    temp.innerHTML = html;
-    const plainText = temp.innerText || temp.textContent || '';
-
+    const plainText = editor ? editor.getText() : '';
     const element = document.createElement("a");
     const file = new Blob([plainText], {type: 'text/plain'});
     element.href = URL.createObjectURL(file);
@@ -263,7 +219,7 @@ export default function App() {
   };
 
   const exportAsHtml = () => {
-    const html = editorRef.current ? editorRef.current.innerHTML : '';
+    const html = editor ? editor.getHTML() : '';
     const fullHtml = `<!DOCTYPE html><html><head><title>${title}</title></head><body>${html}</body></html>`;
     const element = document.createElement("a");
     const file = new Blob([fullHtml], {type: 'text/html'});
@@ -357,12 +313,17 @@ export default function App() {
     );
   }
 
-  // --- Main Editor Screen ---
+  // --- Main Workspace ---
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* Infinite White Paper background with 2px grey divider line every 1056px */
-        .paper-canvas-sheet {
+        /* Continuous Page Background Styling */
+        .tiptap {
+          outline: none !important;
+          min-height: 864px;
+        }
+
+        .paper-sheet {
           background-color: #ffffff !important;
           background-image: linear-gradient(to bottom, transparent 1054px, #cbd5e1 1054px, #cbd5e1 1056px) !important;
           background-size: 100% 1056px !important;
@@ -371,7 +332,7 @@ export default function App() {
           width: 816px !important;
         }
 
-        /* Print Media Styles */
+        /* Native Print Formatting */
         @media print {
           header, sidebar, .no-print, .toolbar-container, .status-bar { 
             display: none !important; 
@@ -387,7 +348,7 @@ export default function App() {
             size: 8.5in 11in;
             margin: 1in;
           }
-          .paper-canvas-sheet { 
+          .paper-sheet { 
             box-shadow: none !important; 
             margin: 0 !important; 
             width: 100% !important; 
@@ -396,13 +357,10 @@ export default function App() {
             background: white !important;
             background-image: none !important;
           }
-          ::-webkit-scrollbar { 
-            display: none !important; 
-          }
         }
       `}</style>
 
-      {/* Top Header */}
+      {/* Header */}
       <header className="no-print flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm z-20">
         <div className="flex items-center gap-3">
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100">
@@ -430,7 +388,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Account & Export Controls */}
         <div className="flex items-center gap-3">
           <button onClick={handlePrint} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <Printer className="h-4 w-4 text-slate-500" /> Print
@@ -489,78 +446,30 @@ export default function App() {
           
           {/* Formatting Toolbar */}
           <div className="toolbar-container no-print flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-4 py-2 shadow-sm z-10">
-            <select value={fontFamily} onChange={(e) => applyFontFamily(e.target.value)} className="h-8 rounded border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700">
-              <option value="Arial">Arial</option>
-              <option value="Times New Roman">Times New Roman</option>
-              <option value="Courier New">Courier New</option>
-              <option value="Georgia">Georgia</option>
-              <option value="Verdana">Verdana</option>
-            </select>
-
-            <div className="h-5 w-[1px] bg-slate-200 mx-1" />
-
-            <select value={fontSize} onChange={(e) => applyFontSize(e.target.value)} className="h-8 rounded border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700">
-              <option value="1">8 pt</option>
-              <option value="2">10 pt</option>
-              <option value="3">12 pt</option>
-              <option value="4">14 pt</option>
-              <option value="5">18 pt</option>
-              <option value="6">24 pt</option>
-              <option value="7">36 pt</option>
-            </select>
-
-            <div className="h-5 w-[1px] bg-slate-200 mx-1" />
-
-            <button onClick={() => executeCommand('bold')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.bold ? 'bg-slate-200 text-blue-600' : ''}`}><Bold className="h-4 w-4" /></button>
-            <button onClick={() => executeCommand('italic')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.italic ? 'bg-slate-200 text-blue-600' : ''}`}><Italic className="h-4 w-4" /></button>
-            <button onClick={() => executeCommand('underline')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.underline ? 'bg-slate-200 text-blue-600' : ''}`}><Underline className="h-4 w-4" /></button>
-
-            <div className="h-5 w-[1px] bg-slate-200 mx-1" />
-
-            <span className="text-xs font-medium text-slate-400 pl-1">Spacing:</span>
-            <select value={lineSpacing} onChange={(e) => applyLineSpacing(e.target.value)} className="h-8 rounded border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700">
-              <option value="1.0">Single (1.0)</option>
-              <option value="1.15">1.15</option>
-              <option value="1.5">1.5</option>
-              <option value="2.0">Double (2.0)</option>
-            </select>
-
-            <div className="h-5 w-[1px] bg-slate-200 mx-1" />
-
-            <button onClick={() => executeCommand('justifyLeft')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'left' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignLeft className="h-4 w-4" /></button>
-            <button onClick={() => executeCommand('justifyCenter')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'center' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignCenter className="h-4 w-4" /></button>
-            <button onClick={() => executeCommand('justifyRight')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.align === 'right' ? 'bg-slate-200 text-blue-600' : ''}`}><AlignRight className="h-4 w-4" /></button>
-
-            <div className="h-5 w-[1px] bg-slate-200 mx-1" />
-
-            <label className="flex items-center gap-1 cursor-pointer" title="Text Color">
-              <Palette className="h-4 w-4 text-slate-600" />
-              <input type="color" value={textColor} onChange={(e) => applyTextColor(e.target.value)} className="h-6 w-6 cursor-pointer border-none bg-transparent" />
-            </label>
-            <label className="flex items-center gap-1 cursor-pointer" title="Highlight Color">
-              <Highlighter className="h-4 w-4 text-slate-600" />
-              <input type="color" value={highlightColor} onChange={(e) => applyHighlightColor(e.target.value)} className="h-6 w-6 cursor-pointer border-none bg-transparent" />
-            </label>
+            <button 
+              onClick={() => editor?.chain().focus().toggleBold().run()} 
+              className={`p-1.5 rounded hover:bg-slate-100 ${editor?.isActive('bold') ? 'bg-slate-200 text-blue-600' : ''}`}
+            >
+              <Bold className="h-4 w-4" />
+            </button>
+            <button 
+              onClick={() => editor?.chain().focus().toggleItalic().run()} 
+              className={`p-1.5 rounded hover:bg-slate-100 ${editor?.isActive('italic') ? 'bg-slate-200 text-blue-600' : ''}`}
+            >
+              <Italic className="h-4 w-4" />
+            </button>
           </div>
 
-          {/* Paper Canvas (Expanding Paper Sheet) */}
+          {/* TipTap Document Canvas */}
           <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
-            <div className="paper-canvas-sheet shadow-xl border border-slate-300 p-24">
-              <div
-                ref={editorRef}
-                contentEditable
-                suppressContentEditableWarning
-                onInput={handleEditorInput}
-                onKeyUp={checkActiveFormats}
-                onMouseUp={checkActiveFormats}
-                className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px]"
-              />
+            <div className="paper-sheet shadow-xl border border-slate-300 p-24">
+              <EditorContent editor={editor} />
             </div>
           </div>
 
           {/* Bottom Status Bar */}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
-            <div>Word Processor Workspace</div>
+            <div>TipTap Engine Workspace</div>
             <div className="flex items-center gap-4">
               <span>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
               <span>{wordCount} Words</span>
