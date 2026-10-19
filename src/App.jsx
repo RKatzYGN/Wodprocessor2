@@ -56,11 +56,11 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
-  const [pageChunks, setPageChunks] = useState(['<p>Start typing here...</p>']);
+  const [pageCount, setPageCount] = useState(1);
 
   const saveTimeoutRef = useRef(null);
 
-  // Initialize TipTap Engine
+  // Initialize TipTap Engine with Single Active Surface
   const editor = useEditor({
     extensions: [StarterKit],
     content: '<p>Start typing here...</p>',
@@ -70,48 +70,17 @@ export default function App() {
       setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0);
       setCharCount(text.length);
 
-      // Split content into physical 864px page chunks dynamically
-      repaginateContent(html);
+      // Measure total height to update page count
+      if (editor.options.element) {
+        const height = editor.options.element.scrollHeight;
+        setPageCount(Math.max(1, Math.ceil(height / 864)));
+      }
+
       triggerAutoSave(html, title);
     },
   });
 
-  const repaginateContent = (fullHtml) => {
-    const tempDiv = document.createElement('div');
-    tempDiv.style.width = '816px';
-    tempDiv.style.padding = '96px';
-    tempDiv.style.visibility = 'hidden';
-    tempDiv.style.position = 'absolute';
-    tempDiv.innerHTML = fullHtml;
-    document.body.appendChild(tempDiv);
-
-    const children = Array.from(tempDiv.children);
-    const chunks = [];
-    let currentChunk = '';
-    let currentHeight = 0;
-    const maxHeightPerPage = 864; // Max height for 11in page with 1in padding
-
-    children.forEach((child) => {
-      const childHeight = child.offsetHeight || 24;
-      if (currentHeight + childHeight > maxHeightPerPage && currentChunk !== '') {
-        chunks.push(currentChunk);
-        currentChunk = child.outerHTML;
-        currentHeight = childHeight;
-      } else {
-        currentChunk += child.outerHTML;
-        currentHeight += childHeight;
-      }
-    });
-
-    if (currentChunk) {
-      chunks.push(currentChunk);
-    }
-
-    document.body.removeChild(tempDiv);
-    setPageChunks(chunks.length > 0 ? chunks : ['<p>Start typing here...</p>']);
-  };
-
-  // Auth Listener
+  // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -172,7 +141,6 @@ export default function App() {
     if (editor) {
       editor.commands.setContent(contentHtml);
     }
-    repaginateContent(contentHtml);
     setSaveStatus('Saved');
   };
 
@@ -193,7 +161,6 @@ export default function App() {
       if (editor) {
         editor.commands.setContent(initialContent);
       }
-      repaginateContent(initialContent);
       setSaveStatus('Saved');
     } catch (err) {
       console.error("Failed to create doc:", err);
@@ -270,7 +237,7 @@ export default function App() {
     );
   }
 
-  // --- Auth Screen ---
+  // Auth Screen
   if (!user) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-100 font-sans">
@@ -345,26 +312,29 @@ export default function App() {
     );
   }
 
-  // --- Main Editor Screen ---
+  // Main Editor Screen
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
+        /* TipTap Core Active Surface */
         .tiptap {
           outline: none !important;
           min-height: 864px;
         }
 
-        /* Physical Page Card Styles */
-        .page-card {
+        /* Seamless Multi-Page Visual Paper Gaps without DOM Duplication */
+        .page-container {
           width: 816px !important;
-          height: 1056px !important;
+          min-height: 1056px !important;
           padding: 96px !important;
           background-color: #ffffff !important;
           box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+          background-image: linear-gradient(to bottom, transparent 864px, #e2e8f0 864px, #e2e8f0 896px, transparent 896px) !important;
+          background-size: 100% 896px !important;
         }
 
         @media print {
-          header, sidebar, .no-print, .toolbar-container, .status-bar, .page-number { 
+          header, sidebar, .no-print, .toolbar-container, .status-bar { 
             display: none !important; 
           }
           body, html, #root, .main-content { 
@@ -376,17 +346,15 @@ export default function App() {
           }
           @page {
             size: 8.5in 11in;
-            margin: 0;
+            margin: 1in;
           }
-          .page-card { 
+          .page-container { 
             box-shadow: none !important; 
-            margin: 0 auto !important; 
-            width: 8.5in !important; 
-            height: 11in !important; 
-            padding: 1in !important; 
-            page-break-after: always !important; 
-            page-break-inside: avoid !important;
+            margin: 0 !important; 
+            width: 100% !important; 
+            padding: 0 !important; 
             background: white !important;
+            background-image: none !important;
           }
         }
       `}</style>
@@ -491,27 +459,18 @@ export default function App() {
             </button>
           </div>
 
-          {/* Multi-Page Canvas Layout */}
-          <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
-            {pageChunks.map((chunkHtml, idx) => (
-              <div key={idx} className="page-card rounded border border-slate-300 relative flex flex-col justify-between">
-                {idx === 0 ? (
-                  <EditorContent editor={editor} />
-                ) : (
-                  <div dangerouslySetInnerHTML={{ __html: chunkHtml }} className="text-slate-900 leading-relaxed font-sans min-h-[864px]" />
-                )}
-                <div className="page-number text-right text-xs text-slate-400 no-print select-none pt-4">
-                  Page {idx + 1} of {pageChunks.length}
-                </div>
-              </div>
-            ))}
+          {/* Unified Editor Workspace */}
+          <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
+            <div className="page-container rounded border border-slate-300 relative">
+              <EditorContent editor={editor} />
+            </div>
           </div>
 
-          {/* Bottom Status Bar */}
+          {/* Status Bar */}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
-            <div>TipTap Multi-Page Workspace</div>
+            <div>TipTap Engine Workspace</div>
             <div className="flex items-center gap-4">
-              <span>{pageChunks.length} {pageChunks.length === 1 ? 'Page' : 'Pages'}</span>
+              <span>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
               <span>{wordCount} Words</span>
               <span>{charCount} Characters</span>
             </div>
