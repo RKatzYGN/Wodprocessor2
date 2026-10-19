@@ -565,7 +565,7 @@ export default function App() {
             ))}
           </div>
 
-          {/* Bottom Status Bar */}
+         {/* Bottom Status Bar */}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
             <div>Word Processor Workspace</div>
             <div className="flex items-center gap-4">
@@ -578,7 +578,5 @@ export default function App() {
         </div>
       </div>
     </div>
-  );
-}
   );
 }
