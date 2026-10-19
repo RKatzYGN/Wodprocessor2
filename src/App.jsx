@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 
 // ----------------------------------------------------------------------
-// Firebase Config - Replace placeholder values with your real keys!
+// Firebase Credentials
 // ----------------------------------------------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyBwURdUU69kkRQTIXUimC-ICc5jE4W3E-w",
@@ -42,7 +42,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  // Auth Modal State
+  // Auth State
   const [isRegistering, setIsRegistering] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -55,7 +55,7 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Formatting & Stats States
+  // Stats & Formatting
   const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, align: 'left' });
   const [fontFamily, setFontFamily] = useState('Arial');
   const [fontSize, setFontSize] = useState('3');
@@ -64,12 +64,12 @@ export default function App() {
   const [highlightColor, setHighlightColor] = useState('#ffffff');
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
-  const [estimatedPages, setEstimatedPages] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
 
   const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
-  // 1. Listen for Auth State Changes
+  // 1. Monitor Auth State
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -78,7 +78,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-Time Firestore Synchronization
+  // 2. Fetch User Documents Real-time
   useEffect(() => {
     if (!user || !db) return;
 
@@ -99,7 +99,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // Auth Operations
+  // Auth Functions
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -122,15 +122,15 @@ export default function App() {
     setCurrentDocId(null);
   };
 
-  // Document Operations
+  // Document Functions
   const loadDocument = (docItem) => {
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
-    const htmlContent = docItem.content || '<p>Start typing here...</p>';
+    const contentHtml = docItem.content || '<p>Start typing here...</p>';
     if (editorRef.current) {
-      editorRef.current.innerHTML = htmlContent;
+      editorRef.current.innerHTML = contentHtml;
     }
-    updateStatsAndPages(htmlContent);
+    updateStats(contentHtml);
     setSaveStatus('Saved');
   };
 
@@ -151,7 +151,7 @@ export default function App() {
       if (editorRef.current) {
         editorRef.current.innerHTML = initialContent;
       }
-      updateStatsAndPages(initialContent);
+      updateStats(initialContent);
       setSaveStatus('Saved');
     } catch (err) {
       console.error("Failed to create doc:", err);
@@ -188,7 +188,7 @@ export default function App() {
     }, 1000);
   };
 
-  const updateStatsAndPages = (html) => {
+  const updateStats = (html) => {
     const temp = document.createElement('div');
     temp.innerHTML = html || '';
     const text = temp.innerText || temp.textContent || '';
@@ -199,7 +199,7 @@ export default function App() {
     if (editorRef.current) {
       const currentHeight = editorRef.current.scrollHeight;
       const pages = Math.max(1, Math.ceil(currentHeight / 864));
-      setEstimatedPages(pages);
+      setPageCount(pages);
     }
   };
 
@@ -213,7 +213,7 @@ export default function App() {
   const handleEditorInput = () => {
     if (!editorRef.current) return;
     const contentHtml = editorRef.current.innerHTML;
-    updateStatsAndPages(contentHtml);
+    updateStats(contentHtml);
     checkActiveFormats();
     triggerAutoSave(contentHtml, title);
   };
@@ -282,7 +282,6 @@ export default function App() {
     );
   }
 
-  // --- Auth Screen ---
   if (!user) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-100 font-sans">
@@ -357,13 +356,12 @@ export default function App() {
     );
   }
 
-  // --- Main Editor Screen ---
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* Dynamic CSS page breaks for multi-page documents on screen */
-        .editor-paper {
-          background-image: linear-gradient(to bottom, #ffffff 0px, #ffffff 864px, #e2e8f0 864px, #e2e8f0 896px, #ffffff 896px);
+        /* Dynamic On-Screen Page Gaps */
+        .paper-canvas {
+          background-image: linear-gradient(to bottom, #ffffff 0px, #ffffff 864px, #cbd5e1 864px, #cbd5e1 896px, #ffffff 896px);
           background-size: 100% 896px;
         }
 
@@ -383,7 +381,7 @@ export default function App() {
             size: 8.5in 11in;
             margin: 1in;
           }
-          .editor-paper { 
+          .paper-canvas { 
             box-shadow: none !important; 
             margin: 0 !important; 
             width: 100% !important; 
@@ -539,10 +537,10 @@ export default function App() {
             </label>
           </div>
 
-          {/* Unified Editor Paper Canvas */}
+          {/* Paper Canvas */}
           <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
             <div 
-              className="editor-paper bg-white shadow-xl border border-slate-300 transition-all duration-200"
+              className="paper-canvas bg-white shadow-xl border border-slate-300 transition-all duration-200"
               style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
             >
               <div
@@ -561,7 +559,7 @@ export default function App() {
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
             <div>Word Processor Workspace</div>
             <div className="flex items-center gap-4">
-              <span>{estimatedPages} {estimatedPages === 1 ? 'Page' : 'Pages'}</span>
+              <span>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
               <span>{wordCount} Words</span>
               <span>{charCount} Characters</span>
             </div>
@@ -572,3 +570,4 @@ export default function App() {
     </div>
   );
 }
+
