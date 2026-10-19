@@ -52,7 +52,6 @@ export default function App() {
   const [documents, setDocuments] = useState([]);
   const [currentDocId, setCurrentDocId] = useState(null);
   const [title, setTitle] = useState('Untitled Document');
-  const [pageCount, setPageCount] = useState(1);
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -65,11 +64,12 @@ export default function App() {
   const [highlightColor, setHighlightColor] = useState('#ffffff');
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
+  const [estimatedPages, setEstimatedPages] = useState(1);
 
   const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
-  // 1. Auth Listener
+  // 1. Listen for Auth State Changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -78,7 +78,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Fetch User Documents
+  // 2. Real-Time Firestore Synchronization
   useEffect(() => {
     if (!user || !db) return;
 
@@ -99,7 +99,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // Auth Handlers
+  // Auth Operations
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -122,16 +122,15 @@ export default function App() {
     setCurrentDocId(null);
   };
 
-  // Document Management
+  // Document Operations
   const loadDocument = (docItem) => {
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
-    const contentHtml = docItem.content || '<p>Start typing here...</p>';
+    const htmlContent = docItem.content || '<p>Start typing here...</p>';
     if (editorRef.current) {
-      editorRef.current.innerHTML = contentHtml;
+      editorRef.current.innerHTML = htmlContent;
     }
-    updateStats(contentHtml);
-    calculatePages();
+    updateStatsAndPages(htmlContent);
     setSaveStatus('Saved');
   };
 
@@ -152,8 +151,7 @@ export default function App() {
       if (editorRef.current) {
         editorRef.current.innerHTML = initialContent;
       }
-      updateStats(initialContent);
-      setPageCount(1);
+      updateStatsAndPages(initialContent);
       setSaveStatus('Saved');
     } catch (err) {
       console.error("Failed to create doc:", err);
@@ -190,21 +188,19 @@ export default function App() {
     }, 1000);
   };
 
-  const updateStats = (html) => {
+  const updateStatsAndPages = (html) => {
     const temp = document.createElement('div');
     temp.innerHTML = html || '';
     const text = temp.innerText || temp.textContent || '';
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     setWordCount(words);
     setCharCount(text.length);
-  };
 
-  const calculatePages = () => {
-    if (!editorRef.current) return;
-    const innerHeight = editorRef.current.scrollHeight;
-    // Standard Letter page printable area (~864px)
-    const needed = Math.max(1, Math.ceil(innerHeight / 864));
-    setPageCount(needed);
+    if (editorRef.current) {
+      const currentHeight = editorRef.current.scrollHeight;
+      const pages = Math.max(1, Math.ceil(currentHeight / 864));
+      setEstimatedPages(pages);
+    }
   };
 
   const handleTitleChange = (e) => {
@@ -217,8 +213,7 @@ export default function App() {
   const handleEditorInput = () => {
     if (!editorRef.current) return;
     const contentHtml = editorRef.current.innerHTML;
-    updateStats(contentHtml);
-    calculatePages();
+    updateStatsAndPages(contentHtml);
     checkActiveFormats();
     triggerAutoSave(contentHtml, title);
   };
@@ -366,9 +361,15 @@ export default function App() {
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
+        /* Dynamic CSS page breaks for multi-page documents on screen */
+        .editor-paper {
+          background-image: linear-gradient(to bottom, #ffffff 0px, #ffffff 864px, #e2e8f0 864px, #e2e8f0 896px, #ffffff 896px);
+          background-size: 100% 896px;
+        }
+
         /* Native Print Formatting */
         @media print {
-          header, sidebar, .no-print, .toolbar-container, .status-bar, .page-footer { 
+          header, sidebar, .no-print, .toolbar-container, .status-bar { 
             display: none !important; 
           }
           body, html, #root, .main-content { 
@@ -382,13 +383,14 @@ export default function App() {
             size: 8.5in 11in;
             margin: 1in;
           }
-          .paper-page { 
+          .editor-paper { 
             box-shadow: none !important; 
             margin: 0 !important; 
             width: 100% !important; 
             border: none !important; 
             padding: 0 !important; 
             background: white !important;
+            background-image: none !important;
           }
           ::-webkit-scrollbar { 
             display: none !important; 
@@ -537,39 +539,29 @@ export default function App() {
             </label>
           </div>
 
-          {/* Document Canvas Container */}
-          <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
-            {Array.from({ length: pageCount }).map((_, idx) => (
-              <div 
-                key={idx}
-                className="paper-page bg-white shadow-xl border border-slate-300 relative"
-                style={{ width: '816px', minHeight: '1056px', padding: '96px 96px 64px 96px' }}
-              >
-                {/* Render the core editor inside the first canvas box */}
-                {idx === 0 && (
-                  <div
-                    ref={editorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onInput={handleEditorInput}
-                    onKeyUp={checkActiveFormats}
-                    onMouseUp={checkActiveFormats}
-                    className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px]"
-                  />
-                )}
-
-                <div className="page-footer absolute bottom-4 right-8 text-xs font-semibold text-slate-400 no-print select-none">
-                  Page {idx + 1} of {pageCount}
-                </div>
-              </div>
-            ))}
+          {/* Unified Editor Paper Canvas */}
+          <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
+            <div 
+              className="editor-paper bg-white shadow-xl border border-slate-300 transition-all duration-200"
+              style={{ width: '816px', minHeight: '1056px', padding: '96px' }}
+            >
+              <div
+                ref={editorRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={handleEditorInput}
+                onKeyUp={checkActiveFormats}
+                onMouseUp={checkActiveFormats}
+                className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px]"
+              />
+            </div>
           </div>
 
-         {/* Bottom Status Bar */}
+          {/* Bottom Status Bar */}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
             <div>Word Processor Workspace</div>
             <div className="flex items-center gap-4">
-              <span>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
+              <span>{estimatedPages} {estimatedPages === 1 ? 'Page' : 'Pages'}</span>
               <span>{wordCount} Words</span>
               <span>{charCount} Characters</span>
             </div>
