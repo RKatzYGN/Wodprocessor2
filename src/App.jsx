@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
@@ -22,7 +23,7 @@ import {
 } from 'firebase/firestore';
 
 // ----------------------------------------------------------------------
-// Firebase Config - Make sure your actual credentials are here!
+// Firebase Config - Replace placeholder values with your real keys!
 // ----------------------------------------------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyBwURdUU69kkRQTIXUimC-ICc5jE4W3E-w",
@@ -51,7 +52,7 @@ export default function App() {
   const [documents, setDocuments] = useState([]);
   const [currentDocId, setCurrentDocId] = useState(null);
   const [title, setTitle] = useState('Untitled Document');
-  const [pages, setPages] = useState(['<p>Start typing here...</p>']);
+  const [pageCount, setPageCount] = useState(1);
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -65,7 +66,7 @@ export default function App() {
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
 
-  const pageRefs = useRef([]);
+  const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
   // 1. Auth Listener
@@ -125,21 +126,22 @@ export default function App() {
   const loadDocument = (docItem) => {
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
-    const loadedPages = Array.isArray(docItem.pages) && docItem.pages.length > 0 
-      ? docItem.pages 
-      : [docItem.content || '<p>Start typing here...</p>'];
-    setPages(loadedPages);
-    updateWordCount(loadedPages);
+    const contentHtml = docItem.content || '<p>Start typing here...</p>';
+    if (editorRef.current) {
+      editorRef.current.innerHTML = contentHtml;
+    }
+    updateStats(contentHtml);
+    calculatePages();
     setSaveStatus('Saved');
   };
 
   const createNewDocument = async () => {
     if (!user || !db) return;
     const newDocId = 'doc_' + Date.now();
-    const initialPages = ['<p>Start typing here...</p>'];
+    const initialContent = '<p>Start typing here...</p>';
     const newDocData = {
       title: 'Untitled Document',
-      pages: initialPages,
+      content: initialContent,
       updatedAt: new Date()
     };
 
@@ -147,8 +149,11 @@ export default function App() {
       await setDoc(doc(db, 'users', user.uid, 'documents', newDocId), newDocData);
       setCurrentDocId(newDocId);
       setTitle(newDocData.title);
-      setPages(initialPages);
-      updateWordCount(initialPages);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = initialContent;
+      }
+      updateStats(initialContent);
+      setPageCount(1);
       setSaveStatus('Saved');
     } catch (err) {
       console.error("Failed to create doc:", err);
@@ -166,7 +171,7 @@ export default function App() {
     }
   };
 
-  const triggerAutoSave = (updatedPages, updatedTitle) => {
+  const triggerAutoSave = (updatedContent, updatedTitle) => {
     setSaveStatus('Saving...');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
@@ -175,7 +180,7 @@ export default function App() {
       try {
         await setDoc(doc(db, 'users', user.uid, 'documents', currentDocId), {
           title: updatedTitle !== undefined ? updatedTitle : title,
-          pages: updatedPages !== undefined ? updatedPages : pages,
+          content: updatedContent,
           updatedAt: new Date()
         }, { merge: true });
         setSaveStatus('Cloud synchronized');
@@ -185,77 +190,37 @@ export default function App() {
     }, 1000);
   };
 
-  const updateWordCount = (pagesArray) => {
-    const combinedText = pagesArray.map((p) => {
-      const temp = document.createElement('div');
-      temp.innerHTML = p;
-      return temp.innerText || temp.textContent || '';
-    }).join(' ');
-
-    const words = combinedText.trim() ? combinedText.trim().split(/\s+/).length : 0;
+  const updateStats = (html) => {
+    const temp = document.createElement('div');
+    temp.innerHTML = html || '';
+    const text = temp.innerText || temp.textContent || '';
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     setWordCount(words);
-    setCharCount(combinedText.length);
+    setCharCount(text.length);
+  };
+
+  const calculatePages = () => {
+    if (!editorRef.current) return;
+    const innerHeight = editorRef.current.scrollHeight;
+    // Standard Letter page printable area (~864px)
+    const needed = Math.max(1, Math.ceil(innerHeight / 864));
+    setPageCount(needed);
   };
 
   const handleTitleChange = (e) => {
     const val = e.target.value;
     setTitle(val);
-    triggerAutoSave(pages, val);
+    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
+    triggerAutoSave(contentHtml, val);
   };
 
-  // Multi-Page Typing & Auto-Flow Logic
-  const handlePageInput = (pageIndex) => {
-    const targetRef = pageRefs.current[pageIndex];
-    if (!targetRef) return;
-
-    const currentHtml = targetRef.innerHTML;
-    const updatedPages = [...pages];
-    updatedPages[pageIndex] = currentHtml;
-
-    // Check if current page text exceeds bottom margin (864px printable height)
-    if (targetRef.scrollHeight > 864) {
-      // Create new page if at the end of document
-      if (pageIndex === pages.length - 1) {
-        updatedPages.push('<p><br></p>');
-        setPages(updatedPages);
-        setTimeout(() => {
-          if (pageRefs.current[pageIndex + 1]) {
-            pageRefs.current[pageIndex + 1].focus();
-          }
-        }, 50);
-      }
-    }
-
-    setPages(updatedPages);
+  const handleEditorInput = () => {
+    if (!editorRef.current) return;
+    const contentHtml = editorRef.current.innerHTML;
+    updateStats(contentHtml);
+    calculatePages();
     checkActiveFormats();
-    updateWordCount(updatedPages);
-    triggerAutoSave(updatedPages, title);
-  };
-
-  const handleKeyDown = (pageIndex, e) => {
-    // Delete page when backspacing empty page
-    if (e.key === 'Backspace' && pageIndex > 0) {
-      const targetRef = pageRefs.current[pageIndex];
-      const text = targetRef ? (targetRef.innerText || targetRef.textContent || '').trim() : '';
-      if (text === '') {
-        e.preventDefault();
-        const updatedPages = pages.filter((_, idx) => idx !== pageIndex);
-        setPages(updatedPages);
-        setTimeout(() => {
-          if (pageRefs.current[pageIndex - 1]) {
-            const prevElem = pageRefs.current[pageIndex - 1];
-            prevElem.focus();
-            // Place cursor at end of previous page
-            const range = document.createRange();
-            const sel = window.getSelection();
-            range.selectNodeContents(prevElem);
-            range.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(range);
-          }
-        }, 50);
-      }
-    }
+    triggerAutoSave(contentHtml, title);
   };
 
   const checkActiveFormats = () => {
@@ -273,22 +238,25 @@ export default function App() {
   const executeCommand = (cmd, val = null) => {
     document.execCommand(cmd, false, val);
     checkActiveFormats();
+    handleEditorInput();
   };
 
   const applyFontSize = (size) => { setFontSize(size); executeCommand('fontSize', size); };
   const applyFontFamily = (font) => { setFontFamily(font); executeCommand('fontName', font); };
-  const applyLineSpacing = (spacing) => { setLineSpacing(spacing); executeCommand('styleWithCSS', true); };
+  const applyLineSpacing = (spacing) => {
+    setLineSpacing(spacing);
+    if (editorRef.current) { editorRef.current.style.lineHeight = spacing; handleEditorInput(); }
+  };
   const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
   const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
 
   const handlePrint = () => window.print();
 
   const exportAsTxt = () => {
-    const plainText = pages.map(p => {
-      const temp = document.createElement('div');
-      temp.innerHTML = p;
-      return temp.innerText || temp.textContent || '';
-    }).join('\n\n--- Page Break ---\n\n');
+    const html = editorRef.current ? editorRef.current.innerHTML : '';
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    const plainText = temp.innerText || temp.textContent || '';
 
     const element = document.createElement("a");
     const file = new Blob([plainText], {type: 'text/plain'});
@@ -300,7 +268,8 @@ export default function App() {
   };
 
   const exportAsHtml = () => {
-    const fullHtml = `<!DOCTYPE html><html><head><title>${title}</title></head><body>${pages.join('<hr/>')}</body></html>`;
+    const html = editorRef.current ? editorRef.current.innerHTML : '';
+    const fullHtml = `<!DOCTYPE html><html><head><title>${title}</title></head><body>${html}</body></html>`;
     const element = document.createElement("a");
     const file = new Blob([fullHtml], {type: 'text/html'});
     element.href = URL.createObjectURL(file);
@@ -411,17 +380,14 @@ export default function App() {
           }
           @page {
             size: 8.5in 11in;
-            margin: 0;
+            margin: 1in;
           }
           .paper-page { 
             box-shadow: none !important; 
-            margin: 0 auto !important; 
-            width: 8.5in !important; 
-            height: 11in !important; 
+            margin: 0 !important; 
+            width: 100% !important; 
             border: none !important; 
-            padding: 1in !important; 
-            page-break-after: always !important; 
-            page-break-inside: avoid !important;
+            padding: 0 !important; 
             background: white !important;
           }
           ::-webkit-scrollbar { 
@@ -571,29 +537,29 @@ export default function App() {
             </label>
           </div>
 
-          {/* Array-Based Multi-Page Paper Canvas */}
+          {/* Document Canvas Container */}
           <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 bg-slate-200">
-            {pages.map((pageHtml, index) => (
+            {Array.from({ length: pageCount }).map((_, idx) => (
               <div 
-                key={index}
-                className="paper-page bg-white shadow-xl border border-slate-300 relative overflow-hidden flex flex-col justify-between"
-                style={{ width: '816px', height: '1056px', padding: '96px 96px 64px 96px' }}
+                key={idx}
+                className="paper-page bg-white shadow-xl border border-slate-300 relative"
+                style={{ width: '816px', minHeight: '1056px', padding: '96px 96px 64px 96px' }}
               >
-                <div
-                  ref={(el) => (pageRefs.current[index] = el)}
-                  contentEditable
-                  suppressContentEditableWarning
-                  dangerouslySetInnerHTML={{ __html: pageHtml }}
-                  onInput={() => handlePageInput(index)}
-                  onKeyDown={(e) => handleKeyDown(index, e)}
-                  onKeyUp={checkActiveFormats}
-                  onMouseUp={checkActiveFormats}
-                  className="outline-none text-slate-900 leading-relaxed font-sans"
-                  style={{ height: '864px', overflow: 'hidden' }}
-                />
+                {/* Render the core editor inside the first canvas box */}
+                {idx === 0 && (
+                  <div
+                    ref={editorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={handleEditorInput}
+                    onKeyUp={checkActiveFormats}
+                    onMouseUp={checkActiveFormats}
+                    className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px]"
+                  />
+                )}
 
-                <div className="page-footer text-right text-xs font-semibold text-slate-400 no-print select-none">
-                  Page {index + 1} of {pages.length}
+                <div className="page-footer absolute bottom-4 right-8 text-xs font-semibold text-slate-400 no-print select-none">
+                  Page {idx + 1} of {pageCount}
                 </div>
               </div>
             ))}
@@ -603,7 +569,7 @@ export default function App() {
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
             <div>Word Processor Workspace</div>
             <div className="flex items-center gap-4">
-              <span>{pages.length} {pages.length === 1 ? 'Page' : 'Pages'}</span>
+              <span>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
               <span>{wordCount} Words</span>
               <span>{charCount} Characters</span>
             </div>
@@ -612,5 +578,7 @@ export default function App() {
         </div>
       </div>
     </div>
+  );
+}
   );
 }
