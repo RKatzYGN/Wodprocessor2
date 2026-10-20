@@ -3,7 +3,7 @@ import {
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode, Layers, FileUp, Sparkles, ChevronDown
+  FileCode, Layers, Edit3, Settings
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -35,10 +35,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-/* Standard 96 DPI Paper Dimensions (US Letter: 8.5 x 11 inches) */
-const PAGE_HEIGHT_PX = 1056; 
-const PAGE_MARGIN_TOP_BOTTOM = 96; // 1-inch margins = 96px
-const PRINTABLE_PAGE_HEIGHT = PAGE_HEIGHT_PX - (PAGE_MARGIN_TOP_BOTTOM * 2); // 864px
+/* Print and page metric heights */
+const PRINTABLE_PAGE_HEIGHT_PX = 864; // ~9 inches printable vertical space at 96 DPI
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -50,19 +48,21 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // Document states
+  // Document management states
   const [documents, setDocuments] = useState([]);
   const [currentDocId, setCurrentDocId] = useState(null);
   const [title, setTitle] = useState('Untitled Document');
+  const [headerText, setHeaderText] = useState('Document Header');
+  const [footerText, setFooterText] = useState('Confidential — Document Footer');
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Stats & Page metrics
+  // Stats and metrics
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [pageCount, setPageCount] = useState(1);
 
-  // Toolbar selection state
+  // Toolbar formatting state
   const [activeFormats, setActiveFormats] = useState({
     bold: false,
     italic: false,
@@ -113,9 +113,8 @@ export default function App() {
     setWordCount(words);
     setCharCount(text.length);
 
-    // Calculate real pages based on printable content height
     const scrollHeight = editorRef.current.scrollHeight;
-    const computedPages = Math.max(1, Math.ceil(scrollHeight / PRINTABLE_PAGE_HEIGHT));
+    const computedPages = Math.max(1, Math.ceil(scrollHeight / PRINTABLE_PAGE_HEIGHT_PX));
     setPageCount(computedPages);
   }, []);
 
@@ -131,11 +130,11 @@ export default function App() {
                document.queryCommandState('justifyFull') ? 'justify' : 'left'
       });
     } catch {
-      // Ignore document state query errors when blur
+      // Ignored during blur
     }
   }, []);
 
-  const triggerAutoSave = (htmlContent, newTitle) => {
+  const triggerAutoSave = (htmlContent, newTitle, newHeader, newFooter) => {
     if (isUpdatingFromRemoteRef.current) return;
     setSaveStatus('Saving...');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -145,6 +144,8 @@ export default function App() {
       try {
         await setDoc(doc(db, 'users', user.uid, 'documents', currentDocId), {
           title: newTitle !== undefined ? newTitle : title,
+          header: newHeader !== undefined ? newHeader : headerText,
+          footer: newFooter !== undefined ? newFooter : footerText,
           content: htmlContent,
           updatedAt: new Date()
         }, { merge: true });
@@ -160,6 +161,9 @@ export default function App() {
     isUpdatingFromRemoteRef.current = true;
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
+    setHeaderText(docItem.header !== undefined ? docItem.header : 'Document Header');
+    setFooterText(docItem.footer !== undefined ? docItem.footer : 'Confidential — Document Footer');
+    
     const content = docItem.content || '<p>Start typing your document here...</p>';
     if (editorRef.current) {
       editorRef.current.innerHTML = content;
@@ -177,6 +181,8 @@ export default function App() {
     const initialContent = '<p>Start typing your document here...</p>';
     const newDocData = {
       title: 'Untitled Document',
+      header: 'Document Header',
+      footer: 'Confidential — Document Footer',
       content: initialContent,
       updatedAt: new Date()
     };
@@ -185,6 +191,8 @@ export default function App() {
       await setDoc(doc(db, 'users', user.uid, 'documents', newDocId), newDocData);
       setCurrentDocId(newDocId);
       setTitle(newDocData.title);
+      setHeaderText(newDocData.header);
+      setFooterText(newDocData.footer);
       if (editorRef.current) {
         editorRef.current.innerHTML = initialContent;
       }
@@ -212,7 +220,7 @@ export default function App() {
     document.execCommand(command, false, value);
     updateToolbarStatus();
     calculateMetrics();
-    triggerAutoSave(editorRef.current.innerHTML, title);
+    triggerAutoSave(editorRef.current.innerHTML, title, headerText, footerText);
   };
 
   const handleFontSize = (size) => {
@@ -239,21 +247,36 @@ export default function App() {
     if (!editorRef.current) return;
     calculateMetrics();
     updateToolbarStatus();
-    triggerAutoSave(editorRef.current.innerHTML, title);
+    triggerAutoSave(editorRef.current.innerHTML, title, headerText, footerText);
   };
 
   const handleTitleChange = (e) => {
     const val = e.target.value;
     setTitle(val);
     const content = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(content, val);
+    triggerAutoSave(content, val, headerText, footerText);
+  };
+
+  const handleHeaderChange = (e) => {
+    const val = e.target.value;
+    setHeaderText(val);
+    const content = editorRef.current ? editorRef.current.innerHTML : '';
+    triggerAutoSave(content, title, val, footerText);
+  };
+
+  const handleFooterChange = (e) => {
+    const val = e.target.value;
+    setFooterText(val);
+    const content = editorRef.current ? editorRef.current.innerHTML : '';
+    triggerAutoSave(content, title, headerText, val);
   };
 
   const handlePrint = () => window.print();
 
   const exportAsTxt = () => {
     const text = editorRef.current ? (editorRef.current.innerText || editorRef.current.textContent || '') : '';
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const fullText = `--- HEADER: ${headerText} ---\n\n${text}\n\n--- FOOTER: ${footerText} ---`;
+    const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `${title || 'document'}.txt`;
@@ -262,7 +285,23 @@ export default function App() {
 
   const exportAsHtml = () => {
     const html = editorRef.current ? editorRef.current.innerHTML : '';
-    const fullDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:${fontFamily},sans-serif;padding:40px;line-height:1.6;max-width:800px;margin:auto;}</style></head><body>${html}</body></html>`;
+    const fullDoc = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    body { font-family: ${fontFamily}, sans-serif; padding: 48px; line-height: 1.6; max-width: 800px; margin: auto; color: #0f172a; }
+    .doc-header { font-size: 11px; color: #64748b; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px; margin-bottom: 32px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .doc-footer { font-size: 11px; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 8px; margin-top: 48px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="doc-header">${headerText}</div>
+  <div>${html}</div>
+  <div class="doc-footer">${footerText}</div>
+</body>
+</html>`;
     const blob = new Blob([fullDoc], { type: 'text/html;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -313,7 +352,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-800 leading-tight">Word Processor</h1>
-              <p className="text-xs text-slate-500">Cloud Paginated Document Studio</p>
+              <p className="text-xs text-slate-500">Continuous Studio with Headers & Footers</p>
             </div>
           </div>
 
@@ -384,42 +423,30 @@ export default function App() {
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden select-none">
       
-      {/* Dynamic CSS Styling for Seamless Pages and Print Output */}
+      {/* CSS: Continuous Sheet and Native Print Rules for Repeating Header/Footer */}
       <style>{`
-        /* Multi-Page Canvas: White sheets separated by clean 32px workspace page gaps */
-        .workspace-pages-container {
-          background-color: transparent;
+        /* Infinite White Paper with subtle 1056px page dividing guidelines */
+        .continuous-paper-canvas {
+          width: 816px !important;
+          background-color: #ffffff !important;
+          background-image: linear-gradient(to bottom, transparent 1054px, #cbd5e1 1054px, #cbd5e1 1056px) !important;
+          background-size: 100% 1056px !important;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
         }
 
-        .paper-sheet-card {
-          width: 816px !important;
-          min-height: 1056px !important;
-          background: #ffffff !important;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-          position: relative;
-        }
-
-        /* Seamless Continuous Typing Canvas */
-        .document-canvas-editor {
-          width: 816px !important;
-          padding: 96px !important; /* Standard 1-inch printable margins */
-          min-height: 1056px !important;
+        .document-editor-content {
           outline: none !important;
           color: #0f172a !important;
           line-height: 1.6 !important;
-          background-color: #ffffff !important;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-          /* Subtle physical page dividers rendered every 1056px */
-          background-image: linear-gradient(to bottom, transparent 1052px, #cbd5e1 1052px, #cbd5e1 1056px) !important;
-          background-size: 100% 1056px !important;
         }
 
-        .document-canvas-editor p {
+        .document-editor-content p {
           margin-bottom: 0.75rem;
         }
 
+        /* Repeating headers and footers across every physical printed sheet */
         @media print {
-          header, aside, .no-print, .toolbar-container, .status-bar { 
+          header, aside, .no-print, .toolbar-container, .status-bar, .on-screen-header-footer { 
             display: none !important; 
           }
           body, html, #root, .main-scroll-area { 
@@ -431,9 +458,35 @@ export default function App() {
           }
           @page {
             size: 8.5in 11in;
-            margin: 1in;
+            margin: 0.8in 1in 0.8in 1in;
           }
-          .document-canvas-editor { 
+          .print-fixed-header {
+            display: block !important;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            font-size: 10pt;
+            color: #64748b;
+            border-bottom: 1px solid #cbd5e1;
+            padding-bottom: 4px;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          }
+          .print-fixed-footer {
+            display: block !important;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            font-size: 10pt;
+            color: #64748b;
+            border-top: 1px solid #cbd5e1;
+            padding-top: 4px;
+            text-align: center;
+          }
+          .continuous-paper-canvas { 
             box-shadow: none !important; 
             margin: 0 !important; 
             width: 100% !important; 
@@ -441,10 +494,24 @@ export default function App() {
             background: white !important;
             background-image: none !important;
           }
+          .document-editor-content {
+            margin-top: 0.3in !important;
+            margin-bottom: 0.3in !important;
+          }
+        }
+
+        @media screen {
+          .print-fixed-header, .print-fixed-footer {
+            display: none;
+          }
         }
       `}</style>
 
-      {/* Top Application Bar */}
+      {/* Hidden elements specifically for the print engine */}
+      <div className="print-fixed-header">{headerText}</div>
+      <div className="print-fixed-footer">{footerText}</div>
+
+      {}
       <header className="no-print flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm z-20">
         <div className="flex items-center gap-3">
           <button 
@@ -482,12 +549,12 @@ export default function App() {
           </div>
         </div>
 
-        {/* Global Actions */}
+        {/* Global Export & Print Controls */}
         <div className="flex items-center gap-3">
           <button 
             onClick={handlePrint} 
             className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
-            title="Print or Save as PDF"
+            title="Print (repeats header & footer on all pages)"
           >
             <Printer className="h-4 w-4 text-slate-500" /> Print
           </button>
@@ -525,7 +592,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Studio Body */}
+      {}
       <div className="flex flex-1 overflow-hidden relative">
         
         {/* Left Document Sidebar */}
@@ -573,10 +640,10 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Central Editor Area */}
+        {/* Central Studio Area */}
         <div className="flex flex-1 flex-col overflow-hidden bg-slate-200">
           
-          {/* Full Formatting Toolbar */}
+          {}
           <div className="toolbar-container no-print flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-4 py-2 shadow-sm z-10">
             
             {/* Font Family */}
@@ -718,24 +785,67 @@ export default function App() {
             </label>
           </div>
 
+          {}
           <div className="main-scroll-area flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
             <div className="relative flex flex-col items-center">
               
-              {/* Document Surface */}
-              <div
-                ref={editorRef}
-                contentEditable
-                suppressContentEditableWarning
-                onInput={handleEditorInput}
-                onKeyUp={updateToolbarStatus}
-                onMouseUp={updateToolbarStatus}
-                className="document-canvas-editor rounded-sm select-text font-normal"
+              {/* White Paper Canvas Sheet */}
+              <div 
+                className="continuous-paper-canvas rounded-sm p-16 flex flex-col justify-between"
                 style={{
-                  fontFamily: fontFamily
+                  minHeight: '1056px',
+                  height: 'auto'
                 }}
-              />
+              >
+                
+                {/* On-Screen Editable Header */}
+                <div className="on-screen-header-footer flex items-center justify-between border-b border-slate-200 pb-2 mb-8">
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <Edit3 className="h-3.5 w-3.5" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider">Header</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={headerText}
+                    onChange={handleHeaderChange}
+                    placeholder="Enter document header (appears on all printed pages)..."
+                    className="w-4/5 text-right text-xs text-slate-500 font-medium bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:outline-none px-2 py-0.5 transition-all"
+                  />
+                </div>
 
-              {/* Dynamic Page Break Status Pill */}
+                {/* Primary Continuous Text Editor */}
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={handleEditorInput}
+                  onKeyUp={updateToolbarStatus}
+                  onMouseUp={updateToolbarStatus}
+                  className="document-editor-content flex-1 min-h-[864px] select-text font-normal"
+                  style={{
+                    fontFamily: fontFamily
+                  }}
+                />
+
+                {/* On-Screen Editable Footer */}
+                <div className="on-screen-header-footer flex items-center justify-between border-t border-slate-200 pt-3 mt-12">
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <Edit3 className="h-3.5 w-3.5" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider">Footer</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={footerText}
+                    onChange={handleFooterChange}
+                    placeholder="Enter document footer (appears on all printed pages)..."
+                    className="w-4/5 text-center text-xs text-slate-500 font-medium bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:outline-none px-2 py-0.5 transition-all"
+                  />
+                  <div className="text-[10px] text-slate-400 font-medium">Page 1</div>
+                </div>
+
+              </div>
+
+              {/* Dynamic Page Metric Pill */}
               <div className="no-print my-6 flex items-center gap-2 rounded-full bg-slate-800/80 px-4 py-1.5 text-xs text-white backdrop-blur-sm shadow-md">
                 <Layers className="h-3.5 w-3.5 text-blue-400" />
                 <span>Page 1 of {pageCount}</span>
@@ -743,6 +853,7 @@ export default function App() {
             </div>
           </div>
 
+          {}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
             <div>Word Processor Studio</div>
             <div className="flex items-center gap-4">
