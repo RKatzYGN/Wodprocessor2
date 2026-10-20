@@ -57,7 +57,7 @@ export default function App() {
 
   // Header & Footer State
   const [headerText, setHeaderText] = useState('DOCUMENT HEADER');
-  const [footerText, setFooterText] = useState('Document Footer • Page');
+  const [footerText, setFooterText] = useState('Document Footer');
 
   // Stats & Formatting State
   const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, align: 'left' });
@@ -73,7 +73,7 @@ export default function App() {
   const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
-  // 1. Auth State Listener
+  // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -82,7 +82,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-Time Firestore Synchronization
+  // Firestore Sync
   useEffect(() => {
     if (!user || !db) return;
 
@@ -103,7 +103,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // Auth Operations
+  // Auth Handlers
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -126,7 +126,7 @@ export default function App() {
     setCurrentDocId(null);
   };
 
-  // Document Management
+  // Document Operations
   const loadDocument = (docItem) => {
     setCurrentDocId(docItem.id);
     setTitle(docItem.title || 'Untitled Document');
@@ -387,27 +387,6 @@ export default function App() {
   return (
     <div className="app-root-container flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* FORCED INFINITE CANVAS BG & REMOVAL OF HEIGHT LOCKS */
-        .scroll-wrapper {
-          overflow-y: auto !important;
-        }
-
-        .continuous-paper-canvas {
-          background-color: #ffffff !important;
-          width: 816px !important;
-          min-height: 1056px !important;
-          height: auto !important;
-          display: flex !important;
-          flex-direction: column !important;
-          box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
-        }
-
-        .editor-text-area {
-          min-height: 864px !important;
-          height: auto !important;
-          overflow: visible !important;
-        }
-
         /* PRINT STYLING */
         @media print {
           header, sidebar, .no-print, .toolbar-container, .status-bar { 
@@ -427,16 +406,6 @@ export default function App() {
           @page {
             size: 8.5in 11in;
             margin: 0.75in;
-          }
-
-          .continuous-paper-canvas {
-            box-shadow: none !important;
-            border: none !important;
-            width: 100% !important;
-            min-height: auto !important;
-            height: auto !important;
-            padding: 0 !important;
-            margin: 0 !important;
           }
 
           .print-header-spacer { height: 40px; }
@@ -653,9 +622,11 @@ export default function App() {
             </label>
           </div>
 
-          {/* Paper Canvas (Infinite White Sheet) */}
-          <div className="scroll-wrapper flex-1 p-8 flex justify-center bg-slate-200">
-            <div className="continuous-paper-canvas rounded p-16">
+          {/* Paper Workspace Outer Scroll Wrapper */}
+          <div className="scroll-wrapper flex-1 overflow-y-auto bg-slate-200 py-8">
+            
+            {/* The White Paper Canvas - Using Block Table Layout Flow */}
+            <div className="mx-auto bg-white rounded shadow-xl border border-slate-300 p-16 w-[816px] min-h-[1056px] h-auto flex flex-col justify-between">
               
               {/* Screen Header Field */}
               <div className="no-print border-b border-slate-200 pb-2 mb-6">
@@ -676,7 +647,7 @@ export default function App() {
                 onInput={handleEditorInput}
                 onKeyUp={checkActiveFormats}
                 onMouseUp={checkActiveFormats}
-                className="editor-text-area outline-none text-slate-900 leading-relaxed font-sans"
+                className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px] h-auto flex-1"
               />
 
               {/* Screen Footer Field */}
@@ -692,6 +663,7 @@ export default function App() {
               </div>
 
             </div>
+
           </div>
 
           {/* Bottom Status Bar */}
