@@ -3,7 +3,7 @@ import {
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode, Layers, Edit3, Settings
+  FileCode, Layers, Edit3
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -35,8 +35,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-/* Print and page metric heights */
-const PRINTABLE_PAGE_HEIGHT_PX = 864; // ~9 inches printable vertical space at 96 DPI
+const PRINTABLE_PAGE_HEIGHT_PX = 864; // Approximate printable space per page at 96 DPI
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -76,6 +75,7 @@ export default function App() {
 
   // DOM Refs
   const editorRef = useRef(null);
+  const printContentRef = useRef(null);
   const saveTimeoutRef = useRef(null);
   const isUpdatingFromRemoteRef = useRef(false);
 
@@ -168,6 +168,9 @@ export default function App() {
     if (editorRef.current) {
       editorRef.current.innerHTML = content;
     }
+    if (printContentRef.current) {
+      printContentRef.current.innerHTML = content;
+    }
     setTimeout(() => {
       calculateMetrics();
       isUpdatingFromRemoteRef.current = false;
@@ -196,6 +199,9 @@ export default function App() {
       if (editorRef.current) {
         editorRef.current.innerHTML = initialContent;
       }
+      if (printContentRef.current) {
+        printContentRef.current.innerHTML = initialContent;
+      }
       calculateMetrics();
       setSaveStatus('Saved');
     } catch (err) {
@@ -220,7 +226,11 @@ export default function App() {
     document.execCommand(command, false, value);
     updateToolbarStatus();
     calculateMetrics();
-    triggerAutoSave(editorRef.current.innerHTML, title, headerText, footerText);
+    const currentHtml = editorRef.current.innerHTML;
+    if (printContentRef.current) {
+      printContentRef.current.innerHTML = currentHtml;
+    }
+    triggerAutoSave(currentHtml, title, headerText, footerText);
   };
 
   const handleFontSize = (size) => {
@@ -245,9 +255,13 @@ export default function App() {
 
   const handleEditorInput = () => {
     if (!editorRef.current) return;
+    const currentHtml = editorRef.current.innerHTML;
+    if (printContentRef.current) {
+      printContentRef.current.innerHTML = currentHtml;
+    }
     calculateMetrics();
     updateToolbarStatus();
-    triggerAutoSave(editorRef.current.innerHTML, title, headerText, footerText);
+    triggerAutoSave(currentHtml, title, headerText, footerText);
   };
 
   const handleTitleChange = (e) => {
@@ -271,7 +285,13 @@ export default function App() {
     triggerAutoSave(content, title, headerText, val);
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    // Sync active DOM content into print container before triggering browser print
+    if (editorRef.current && printContentRef.current) {
+      printContentRef.current.innerHTML = editorRef.current.innerHTML;
+    }
+    window.print();
+  };
 
   const exportAsTxt = () => {
     const text = editorRef.current ? (editorRef.current.innerText || editorRef.current.textContent || '') : '';
@@ -352,7 +372,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-800 leading-tight">Word Processor</h1>
-              <p className="text-xs text-slate-500">Continuous Studio with Headers & Footers</p>
+              <p className="text-xs text-slate-500">Continuous Studio with Repeating Headers & Footers</p>
             </div>
           </div>
 
@@ -423,14 +443,14 @@ export default function App() {
   return (
     <div className="flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden select-none">
       
-      {/* CSS: Continuous Sheet and Native Print Rules for Repeating Header/Footer */}
+      {/* CSS: Continuous Screen Canvas + Table-based Repeating Print Architecture */}
       <style>{`
-        /* Infinite White Paper with subtle 1056px page dividing guidelines */
+        /* Continuous White Paper on Screen - Expands infinitely downward */
         .continuous-paper-canvas {
           width: 816px !important;
+          min-height: 1056px !important;
+          height: auto !important;
           background-color: #ffffff !important;
-          background-image: linear-gradient(to bottom, transparent 1054px, #cbd5e1 1054px, #cbd5e1 1056px) !important;
-          background-size: 100% 1056px !important;
           box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
         }
 
@@ -438,18 +458,28 @@ export default function App() {
           outline: none !important;
           color: #0f172a !important;
           line-height: 1.6 !important;
+          min-height: 864px !important;
+          height: auto !important;
+          overflow: visible !important;
         }
 
         .document-editor-content p {
           margin-bottom: 0.75rem;
         }
 
-        /* Repeating headers and footers across every physical printed sheet */
+        /* Screen: Hide the print structure */
+        @media screen {
+          .print-root-container {
+            display: none !important;
+          }
+        }
+
+        /* Print Mode: Hide UI and use semantic printable table for repeating header/footer */
         @media print {
-          header, aside, .no-print, .toolbar-container, .status-bar, .on-screen-header-footer { 
+          header, aside, .no-print, .toolbar-container, .status-bar, .main-scroll-area { 
             display: none !important; 
           }
-          body, html, #root, .main-scroll-area { 
+          body, html, #root { 
             background: white !important; 
             overflow: visible !important; 
             height: auto !important;
@@ -460,58 +490,80 @@ export default function App() {
             size: 8.5in 11in;
             margin: 0.8in 1in 0.8in 1in;
           }
-          .print-fixed-header {
+          .print-root-container {
             display: block !important;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
+            width: 100% !important;
+            background: white !important;
+          }
+          .print-table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+          /* thead and tfoot natively repeat on every printed sheet in standard browsers */
+          .print-table thead {
+            display: table-header-group !important;
+          }
+          .print-table tfoot {
+            display: table-footer-group !important;
+          }
+          .print-header-cell {
+            padding-bottom: 12px;
+            border-bottom: 1px solid #cbd5e1;
             font-size: 10pt;
             color: #64748b;
-            border-bottom: 1px solid #cbd5e1;
-            padding-bottom: 4px;
-            margin-bottom: 16px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
           }
-          .print-fixed-footer {
-            display: block !important;
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+          .print-footer-cell {
+            padding-top: 12px;
+            border-top: 1px solid #cbd5e1;
             font-size: 10pt;
             color: #64748b;
-            border-top: 1px solid #cbd5e1;
-            padding-top: 4px;
             text-align: center;
           }
-          .continuous-paper-canvas { 
-            box-shadow: none !important; 
-            margin: 0 !important; 
-            width: 100% !important; 
-            padding: 0 !important; 
-            background: white !important;
-            background-image: none !important;
+          .print-content-cell {
+            padding-top: 16px;
+            padding-bottom: 16px;
+            font-size: 11pt;
+            color: #0f172a;
+            line-height: 1.6;
           }
-          .document-editor-content {
-            margin-top: 0.3in !important;
-            margin-bottom: 0.3in !important;
-          }
-        }
-
-        @media screen {
-          .print-fixed-header, .print-fixed-footer {
-            display: none;
+          .print-content-cell p {
+            margin-bottom: 0.75rem;
           }
         }
       `}</style>
 
-      {/* Hidden elements specifically for the print engine */}
-      <div className="print-fixed-header">{headerText}</div>
-      <div className="print-fixed-footer">{footerText}</div>
+      {/* Semantic Table structure for the Print Engine (Guarantees repeating Header & Footer) */}
+      <div className="print-root-container">
+        <table className="print-table">
+          <thead>
+            <tr>
+              <th className="print-header-cell font-medium text-left">
+                {headerText || ' '}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="print-content-cell" style={{ fontFamily: fontFamily }}>
+                <div ref={printContentRef}>
+                  <p>Start typing your document here...</p>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="print-footer-cell font-medium">
+                {footerText || ' '}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
 
-      {}
+      {/* Top Application Header */}
       <header className="no-print flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm z-20">
         <div className="flex items-center gap-3">
           <button 
@@ -592,7 +644,7 @@ export default function App() {
         </div>
       </header>
 
-      {}
+      {/* Main Workspace */}
       <div className="flex flex-1 overflow-hidden relative">
         
         {/* Left Document Sidebar */}
@@ -643,7 +695,7 @@ export default function App() {
         {/* Central Studio Area */}
         <div className="flex flex-1 flex-col overflow-hidden bg-slate-200">
           
-          {}
+          {/* Formatting Toolbar */}
           <div className="toolbar-container no-print flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-4 py-2 shadow-sm z-10">
             
             {/* Font Family */}
@@ -785,21 +837,15 @@ export default function App() {
             </label>
           </div>
 
-          {}
+          {/* Main Scrollable Canvas Workspace */}
           <div className="main-scroll-area flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
             <div className="relative flex flex-col items-center">
               
-              {/* White Paper Canvas Sheet */}
-              <div 
-                className="continuous-paper-canvas rounded-sm p-16 flex flex-col justify-between"
-                style={{
-                  minHeight: '1056px',
-                  height: 'auto'
-                }}
-              >
+              {/* Infinitely Expanding White Paper Sheet */}
+              <div className="continuous-paper-canvas rounded-sm p-16 flex flex-col justify-between">
                 
                 {/* On-Screen Editable Header */}
-                <div className="on-screen-header-footer flex items-center justify-between border-b border-slate-200 pb-2 mb-8">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-8">
                   <div className="flex items-center gap-1.5 text-slate-400">
                     <Edit3 className="h-3.5 w-3.5" />
                     <span className="text-[10px] uppercase font-bold tracking-wider">Header</span>
@@ -808,12 +854,12 @@ export default function App() {
                     type="text"
                     value={headerText}
                     onChange={handleHeaderChange}
-                    placeholder="Enter document header (appears on all printed pages)..."
+                    placeholder="Enter document header (prints on all pages)..."
                     className="w-4/5 text-right text-xs text-slate-500 font-medium bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:outline-none px-2 py-0.5 transition-all"
                   />
                 </div>
 
-                {/* Primary Continuous Text Editor */}
+                {/* Primary Continuous Text Editor (Uncapped Height) */}
                 <div
                   ref={editorRef}
                   contentEditable
@@ -821,14 +867,14 @@ export default function App() {
                   onInput={handleEditorInput}
                   onKeyUp={updateToolbarStatus}
                   onMouseUp={updateToolbarStatus}
-                  className="document-editor-content flex-1 min-h-[864px] select-text font-normal"
+                  className="document-editor-content flex-1 select-text font-normal"
                   style={{
                     fontFamily: fontFamily
                   }}
                 />
 
                 {/* On-Screen Editable Footer */}
-                <div className="on-screen-header-footer flex items-center justify-between border-t border-slate-200 pt-3 mt-12">
+                <div className="flex items-center justify-between border-t border-slate-200 pt-3 mt-12">
                   <div className="flex items-center gap-1.5 text-slate-400">
                     <Edit3 className="h-3.5 w-3.5" />
                     <span className="text-[10px] uppercase font-bold tracking-wider">Footer</span>
@@ -837,7 +883,7 @@ export default function App() {
                     type="text"
                     value={footerText}
                     onChange={handleFooterChange}
-                    placeholder="Enter document footer (appears on all printed pages)..."
+                    placeholder="Enter document footer (prints on all pages)..."
                     className="w-4/5 text-center text-xs text-slate-500 font-medium bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:outline-none px-2 py-0.5 transition-all"
                   />
                   <div className="text-[10px] text-slate-400 font-medium">Page 1</div>
@@ -848,12 +894,12 @@ export default function App() {
               {/* Dynamic Page Metric Pill */}
               <div className="no-print my-6 flex items-center gap-2 rounded-full bg-slate-800/80 px-4 py-1.5 text-xs text-white backdrop-blur-sm shadow-md">
                 <Layers className="h-3.5 w-3.5 text-blue-400" />
-                <span>Page 1 of {pageCount}</span>
+                <span>Document Length: ~{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
               </div>
             </div>
           </div>
 
-          {}
+          {/* Bottom Status Bar */}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
             <div>Word Processor Studio</div>
             <div className="flex items-center gap-4">
