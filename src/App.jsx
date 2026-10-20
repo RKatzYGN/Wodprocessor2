@@ -3,7 +3,7 @@ import {
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode, AlignJustify
+  FileCode
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -387,18 +387,29 @@ export default function App() {
   return (
     <div className="app-root-container flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
-        /* Continuous White Sheet: Paper grows infinitely downward */
+        /* FORCED INFINITE CANVAS BG & REMOVAL OF HEIGHT LOCKS */
+        .scroll-wrapper {
+          overflow-y: auto !important;
+        }
+
         .continuous-paper-canvas {
           background-color: #ffffff !important;
           width: 816px !important;
           min-height: 1056px !important;
           height: auto !important;
+          display: flex !important;
+          flex-direction: column !important;
           box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
         }
 
-        /* PRINT STYLING - FIXES CROP / MULTI-PAGE CUTOFF ISSUE */
+        .editor-text-area {
+          min-height: 864px !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
+
+        /* PRINT STYLING */
         @media print {
-          /* Unhide printable wrapper & reset parent overflow */
           header, sidebar, .no-print, .toolbar-container, .status-bar { 
             display: none !important; 
           }
@@ -428,7 +439,6 @@ export default function App() {
             margin: 0 !important;
           }
 
-          /* Print Table Header & Footer (Appears on EVERY Physical Page) */
           .print-header-spacer { height: 40px; }
           .print-footer-spacer { height: 40px; }
 
@@ -643,9 +653,9 @@ export default function App() {
             </label>
           </div>
 
-          {/* Paper Canvas (Infinite White Canvas) */}
-          <div className="scroll-wrapper flex-1 overflow-y-auto p-8 flex justify-center bg-slate-200">
-            <div className="continuous-paper-canvas rounded border border-slate-300 p-16 flex flex-col justify-between">
+          {/* Paper Canvas (Infinite White Sheet) */}
+          <div className="scroll-wrapper flex-1 p-8 flex justify-center bg-slate-200">
+            <div className="continuous-paper-canvas rounded p-16">
               
               {/* Screen Header Field */}
               <div className="no-print border-b border-slate-200 pb-2 mb-6">
@@ -666,7 +676,7 @@ export default function App() {
                 onInput={handleEditorInput}
                 onKeyUp={checkActiveFormats}
                 onMouseUp={checkActiveFormats}
-                className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px] h-auto flex-1"
+                className="editor-text-area outline-none text-slate-900 leading-relaxed font-sans"
               />
 
               {/* Screen Footer Field */}
@@ -678,7 +688,7 @@ export default function App() {
                   placeholder="Click to edit Footer..."
                   className="bg-transparent font-medium text-slate-400 focus:outline-none focus:text-slate-700 w-1/2"
                 />
-                <span>Page Length: ~{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
+                <span>Document Length: ~{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
               </div>
 
             </div>
