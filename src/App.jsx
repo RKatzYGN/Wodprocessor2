@@ -1,9 +1,19 @@
+That error is happening because LayoutHeader and LayoutFooter do not exist in the version of lucide-react installed in your project.
+
+We can fix this instantly by replacing those two imports with standard Lucide layout icons (PanelTop and PanelBottom), which are guaranteed to exist in all versions of lucide-react.
+
+Here is the exact updated code for src/App.jsx.
+
+Step-by-Step Fix for src/App.jsx
+Open src/App.jsx on GitHub, click the pencil icon (✏️), replace everything with this code, and click Commit changes:
+
+JavaScript
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode, LayoutHeader, LayoutFooter
+  FileCode, PanelTop, PanelBottom
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -264,7 +274,6 @@ export default function App() {
   const handleKeyDown = (e) => {
     if (e.key === 'Tab') {
       e.preventDefault();
-      // Insert 4 non-breaking spaces at current cursor location
       executeCommand('insertHTML', '&nbsp;&nbsp;&nbsp;&nbsp;');
     }
   };
@@ -660,13 +669,13 @@ export default function App() {
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Header / Footer Toggles */}
+            {/* Header / Footer Toggles using PanelTop & PanelBottom */}
             <button 
               onClick={toggleHeader} 
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border ${showHeader ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
               title="Toggle Header"
             >
-              <LayoutHeader className="h-3.5 w-3.5" /> Header {showHeader ? 'On' : 'Off'}
+              <PanelTop className="h-3.5 w-3.5" /> Header {showHeader ? 'On' : 'Off'}
             </button>
 
             <button 
@@ -674,7 +683,7 @@ export default function App() {
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border ${showFooter ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
               title="Toggle Footer"
             >
-              <LayoutFooter className="h-3.5 w-3.5" /> Footer {showFooter ? 'On' : 'Off'}
+              <PanelBottom className="h-3.5 w-3.5" /> Footer {showFooter ? 'On' : 'Off'}
             </button>
           </div>
 
