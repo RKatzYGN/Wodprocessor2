@@ -3,7 +3,7 @@ import {
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode
+  FileCode, LayoutHeader, LayoutFooter
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -56,6 +56,8 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Header & Footer State
+  const [showHeader, setShowHeader] = useState(true);
+  const [showFooter, setShowFooter] = useState(true);
   const [headerText, setHeaderText] = useState('DOCUMENT HEADER');
   const [footerText, setFooterText] = useState('Document Footer');
 
@@ -132,6 +134,8 @@ export default function App() {
     setTitle(docItem.title || 'Untitled Document');
     setHeaderText(docItem.headerText || 'DOCUMENT HEADER');
     setFooterText(docItem.footerText || 'Document Footer');
+    setShowHeader(docItem.showHeader !== undefined ? docItem.showHeader : true);
+    setShowFooter(docItem.showFooter !== undefined ? docItem.showFooter : true);
     const contentHtml = docItem.content || '<p>Start typing here...</p>';
     if (editorRef.current) {
       editorRef.current.innerHTML = contentHtml;
@@ -149,6 +153,8 @@ export default function App() {
       content: initialContent,
       headerText: 'DOCUMENT HEADER',
       footerText: 'Document Footer',
+      showHeader: true,
+      showFooter: true,
       updatedAt: new Date()
     };
 
@@ -158,6 +164,8 @@ export default function App() {
       setTitle(newDocData.title);
       setHeaderText(newDocData.headerText);
       setFooterText(newDocData.footerText);
+      setShowHeader(true);
+      setShowFooter(true);
       if (editorRef.current) {
         editorRef.current.innerHTML = initialContent;
       }
@@ -179,7 +187,7 @@ export default function App() {
     }
   };
 
-  const triggerAutoSave = (updatedContent, updatedTitle, updatedHeader, updatedFooter) => {
+  const triggerAutoSave = (updatedContent, updatedTitle, updatedHeader, updatedFooter, updatedShowHeader, updatedShowFooter) => {
     setSaveStatus('Saving...');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
@@ -191,6 +199,8 @@ export default function App() {
           content: updatedContent,
           headerText: updatedHeader !== undefined ? updatedHeader : headerText,
           footerText: updatedFooter !== undefined ? updatedFooter : footerText,
+          showHeader: updatedShowHeader !== undefined ? updatedShowHeader : showHeader,
+          showFooter: updatedShowFooter !== undefined ? updatedShowFooter : showFooter,
           updatedAt: new Date()
         }, { merge: true });
         setSaveStatus('Cloud synchronized');
@@ -219,21 +229,44 @@ export default function App() {
     const val = e.target.value;
     setTitle(val);
     const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(contentHtml, val, headerText, footerText);
+    triggerAutoSave(contentHtml, val, headerText, footerText, showHeader, showFooter);
   };
 
   const handleHeaderChange = (e) => {
     const val = e.target.value;
     setHeaderText(val);
     const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(contentHtml, title, val, footerText);
+    triggerAutoSave(contentHtml, title, val, footerText, showHeader, showFooter);
   };
 
   const handleFooterChange = (e) => {
     const val = e.target.value;
     setFooterText(val);
     const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(contentHtml, title, headerText, val);
+    triggerAutoSave(contentHtml, title, headerText, val, showHeader, showFooter);
+  };
+
+  const toggleHeader = () => {
+    const nextVal = !showHeader;
+    setShowHeader(nextVal);
+    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
+    triggerAutoSave(contentHtml, title, headerText, footerText, nextVal, showFooter);
+  };
+
+  const toggleFooter = () => {
+    const nextVal = !showFooter;
+    setShowFooter(nextVal);
+    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
+    triggerAutoSave(contentHtml, title, headerText, footerText, showHeader, nextVal);
+  };
+
+  // Tab Key Indentation Handler
+  const handleKeyDown = (e) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      // Insert 4 non-breaking spaces at current cursor location
+      executeCommand('insertHTML', '&nbsp;&nbsp;&nbsp;&nbsp;');
+    }
   };
 
   const handleEditorInput = () => {
@@ -241,7 +274,7 @@ export default function App() {
     const contentHtml = editorRef.current.innerHTML;
     updateStats(contentHtml);
     checkActiveFormats();
-    triggerAutoSave(contentHtml, title, headerText, footerText);
+    triggerAutoSave(contentHtml, title, headerText, footerText, showHeader, showFooter);
   };
 
   const checkActiveFormats = () => {
@@ -308,7 +341,7 @@ export default function App() {
     );
   }
 
-  // --- Auth Screen ---
+  // Auth Screen
   if (!user) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-100 font-sans">
@@ -383,7 +416,7 @@ export default function App() {
     );
   }
 
-  // --- Main Editor Screen ---
+  // Main Editor Screen
   return (
     <div className="app-root-container flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
@@ -446,17 +479,19 @@ export default function App() {
       {/* Printable Native Table Layout for Repeating Header/Footer */}
       <div className="hidden print:block w-full">
         <table className="w-full">
-          <thead>
-            <tr>
-              <td>
-                <div className="print-header-spacer" />
-                <div className="print-header-fixed">
-                  <span>{headerText}</span>
-                  <span>{title}</span>
-                </div>
-              </td>
-            </tr>
-          </thead>
+          {showHeader && (
+            <thead>
+              <tr>
+                <td>
+                  <div className="print-header-spacer" />
+                  <div className="print-header-fixed">
+                    <span>{headerText}</span>
+                    <span>{title}</span>
+                  </div>
+                </td>
+              </tr>
+            </thead>
+          )}
           <tbody>
             <tr>
               <td>
@@ -467,17 +502,19 @@ export default function App() {
               </td>
             </tr>
           </tbody>
-          <tfoot>
-            <tr>
-              <td>
-                <div className="print-footer-spacer" />
-                <div className="print-footer-fixed">
-                  <span>{footerText}</span>
-                  <span>Word Processor Studio</span>
-                </div>
-              </td>
-            </tr>
-          </tfoot>
+          {showFooter && (
+            <tfoot>
+              <tr>
+                <td>
+                  <div className="print-footer-spacer" />
+                  <div className="print-footer-fixed">
+                    <span>{footerText}</span>
+                    <span>Word Processor Studio</span>
+                  </div>
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 
@@ -590,9 +627,9 @@ export default function App() {
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            <button onClick={() => executeCommand('bold')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.bold ? 'bg-slate-200 text-blue-600' : ''}`}><Bold className="h-4 w-4" /></button>
-            <button onClick={() => executeCommand('italic')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.italic ? 'bg-slate-200 text-blue-600' : ''}`}><Italic className="h-4 w-4" /></button>
-            <button onClick={() => executeCommand('underline')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.underline ? 'bg-slate-200 text-blue-600' : ''}`}><Underline className="h-4 w-4" /></button>
+            <button onClick={() => executeCommand('bold')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.bold ? 'bg-slate-200 text-blue-600' : ''}`} title="Bold"><Bold className="h-4 w-4" /></button>
+            <button onClick={() => executeCommand('italic')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.italic ? 'bg-slate-200 text-blue-600' : ''}`} title="Italic"><Italic className="h-4 w-4" /></button>
+            <button onClick={() => executeCommand('underline')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.underline ? 'bg-slate-200 text-blue-600' : ''}`} title="Underline"><Underline className="h-4 w-4" /></button>
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
@@ -620,24 +657,46 @@ export default function App() {
               <Highlighter className="h-4 w-4 text-slate-600" />
               <input type="color" value={highlightColor} onChange={(e) => applyHighlightColor(e.target.value)} className="h-6 w-6 cursor-pointer border-none bg-transparent" />
             </label>
+
+            <div className="h-5 w-[1px] bg-slate-200 mx-1" />
+
+            {/* Header / Footer Toggles */}
+            <button 
+              onClick={toggleHeader} 
+              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border ${showHeader ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
+              title="Toggle Header"
+            >
+              <LayoutHeader className="h-3.5 w-3.5" /> Header {showHeader ? 'On' : 'Off'}
+            </button>
+
+            <button 
+              onClick={toggleFooter} 
+              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border ${showFooter ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
+              title="Toggle Footer"
+            >
+              <LayoutFooter className="h-3.5 w-3.5" /> Footer {showFooter ? 'On' : 'Off'}
+            </button>
           </div>
 
           {/* Paper Workspace Outer Scroll Wrapper */}
           <div className="scroll-wrapper flex-1 overflow-y-auto bg-slate-200 py-8">
             
-            {/* The White Paper Canvas - Using Block Table Layout Flow */}
+            {/* The White Paper Canvas */}
             <div className="mx-auto bg-white rounded shadow-xl border border-slate-300 p-16 w-[816px] min-h-[1056px] h-auto flex flex-col justify-between">
               
               {/* Screen Header Field */}
-              <div className="no-print border-b border-slate-200 pb-2 mb-6">
-                <input
-                  type="text"
-                  value={headerText}
-                  onChange={handleHeaderChange}
-                  placeholder="Click to edit Header..."
-                  className="w-full bg-transparent text-xs font-semibold text-slate-400 uppercase tracking-wider focus:outline-none focus:text-slate-700"
-                />
-              </div>
+              {showHeader && (
+                <div className="no-print border-b border-slate-200 pb-2 mb-6 flex justify-between items-center">
+                  <input
+                    type="text"
+                    value={headerText}
+                    onChange={handleHeaderChange}
+                    placeholder="Click to edit Header..."
+                    className="w-full bg-transparent text-xs font-semibold text-slate-400 uppercase tracking-wider focus:outline-none focus:text-slate-700"
+                  />
+                  <button onClick={toggleHeader} className="text-xs text-slate-300 hover:text-red-500 ml-2" title="Remove Header">✕</button>
+                </div>
+              )}
 
               {/* Core Text Editor Container */}
               <div
@@ -645,22 +704,28 @@ export default function App() {
                 contentEditable
                 suppressContentEditableWarning
                 onInput={handleEditorInput}
+                onKeyDown={handleKeyDown}
                 onKeyUp={checkActiveFormats}
                 onMouseUp={checkActiveFormats}
                 className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px] h-auto flex-1"
               />
 
               {/* Screen Footer Field */}
-              <div className="no-print border-t border-slate-200 pt-2 mt-6 flex justify-between items-center text-xs text-slate-400">
-                <input
-                  type="text"
-                  value={footerText}
-                  onChange={handleFooterChange}
-                  placeholder="Click to edit Footer..."
-                  className="bg-transparent font-medium text-slate-400 focus:outline-none focus:text-slate-700 w-1/2"
-                />
-                <span>Document Length: ~{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
-              </div>
+              {showFooter && (
+                <div className="no-print border-t border-slate-200 pt-2 mt-6 flex justify-between items-center text-xs text-slate-400">
+                  <input
+                    type="text"
+                    value={footerText}
+                    onChange={handleFooterChange}
+                    placeholder="Click to edit Footer..."
+                    className="bg-transparent font-medium text-slate-400 focus:outline-none focus:text-slate-700 w-1/2"
+                  />
+                  <div className="flex items-center gap-3">
+                    <span>Document Length: ~{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
+                    <button onClick={toggleFooter} className="text-xs text-slate-300 hover:text-red-500" title="Remove Footer">✕</button>
+                  </div>
+                </div>
+              )}
 
             </div>
 
