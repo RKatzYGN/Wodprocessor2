@@ -3,7 +3,7 @@ import {
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode, PanelTop, PanelBottom
+  FileCode, PanelTop, PanelBottom, List
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -55,11 +55,15 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Header & Footer State
+  // Header & Footer Configuration State
   const [showHeader, setShowHeader] = useState(true);
   const [showFooter, setShowFooter] = useState(true);
-  const [headerText, setHeaderText] = useState('DOCUMENT HEADER');
-  const [footerText, setFooterText] = useState('Document Footer');
+  const [headerText, setHeaderText] = useState('DOCUMENT HEADER\nSecond Line Header');
+  const [footerText, setFooterText] = useState('Document Footer\nPage Information');
+  const [headerColor, setHeaderColor] = useState('grey'); // 'grey' | 'black'
+  const [footerColor, setFooterColor] = useState('grey'); // 'grey' | 'black'
+  const [headerAlign, setHeaderAlign] = useState('center'); // 'left' | 'center' | 'right'
+  const [footerAlign, setFooterAlign] = useState('center'); // 'left' | 'center' | 'right'
 
   // Stats & Formatting State
   const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, align: 'left' });
@@ -136,6 +140,11 @@ export default function App() {
     setFooterText(docItem.footerText || 'Document Footer');
     setShowHeader(docItem.showHeader !== undefined ? docItem.showHeader : true);
     setShowFooter(docItem.showFooter !== undefined ? docItem.showFooter : true);
+    setHeaderColor(docItem.headerColor || 'grey');
+    setFooterColor(docItem.footerColor || 'grey');
+    setHeaderAlign(docItem.headerAlign || 'center');
+    setFooterAlign(docItem.footerAlign || 'center');
+    
     const contentHtml = docItem.content || '<p>Start typing here...</p>';
     if (editorRef.current) {
       editorRef.current.innerHTML = contentHtml;
@@ -155,6 +164,10 @@ export default function App() {
       footerText: 'Document Footer',
       showHeader: true,
       showFooter: true,
+      headerColor: 'grey',
+      footerColor: 'grey',
+      headerAlign: 'center',
+      footerAlign: 'center',
       updatedAt: new Date()
     };
 
@@ -166,6 +179,10 @@ export default function App() {
       setFooterText(newDocData.footerText);
       setShowHeader(true);
       setShowFooter(true);
+      setHeaderColor('grey');
+      setFooterColor('grey');
+      setHeaderAlign('center');
+      setFooterAlign('center');
       if (editorRef.current) {
         editorRef.current.innerHTML = initialContent;
       }
@@ -187,20 +204,25 @@ export default function App() {
     }
   };
 
-  const triggerAutoSave = (updatedContent, updatedTitle, updatedHeader, updatedFooter, updatedShowHeader, updatedShowFooter) => {
+  const triggerAutoSave = (overrides = {}) => {
     setSaveStatus('Saving...');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
     saveTimeoutRef.current = setTimeout(async () => {
       if (!user || !db || !currentDocId) return;
       try {
+        const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
         await setDoc(doc(db, 'users', user.uid, 'documents', currentDocId), {
-          title: updatedTitle !== undefined ? updatedTitle : title,
-          content: updatedContent,
-          headerText: updatedHeader !== undefined ? updatedHeader : headerText,
-          footerText: updatedFooter !== undefined ? updatedFooter : footerText,
-          showHeader: updatedShowHeader !== undefined ? updatedShowHeader : showHeader,
-          showFooter: updatedShowFooter !== undefined ? updatedShowFooter : showFooter,
+          title: overrides.title !== undefined ? overrides.title : title,
+          content: contentHtml,
+          headerText: overrides.headerText !== undefined ? overrides.headerText : headerText,
+          footerText: overrides.footerText !== undefined ? overrides.footerText : footerText,
+          showHeader: overrides.showHeader !== undefined ? overrides.showHeader : showHeader,
+          showFooter: overrides.showFooter !== undefined ? overrides.showFooter : showFooter,
+          headerColor: overrides.headerColor !== undefined ? overrides.headerColor : headerColor,
+          footerColor: overrides.footerColor !== undefined ? overrides.footerColor : footerColor,
+          headerAlign: overrides.headerAlign !== undefined ? overrides.headerAlign : headerAlign,
+          footerAlign: overrides.footerAlign !== undefined ? overrides.footerAlign : footerAlign,
           updatedAt: new Date()
         }, { merge: true });
         setSaveStatus('Cloud synchronized');
@@ -228,36 +250,19 @@ export default function App() {
   const handleTitleChange = (e) => {
     const val = e.target.value;
     setTitle(val);
-    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(contentHtml, val, headerText, footerText, showHeader, showFooter);
-  };
-
-  const handleHeaderChange = (e) => {
-    const val = e.target.value;
-    setHeaderText(val);
-    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(contentHtml, title, val, footerText, showHeader, showFooter);
-  };
-
-  const handleFooterChange = (e) => {
-    const val = e.target.value;
-    setFooterText(val);
-    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(contentHtml, title, headerText, val, showHeader, showFooter);
+    triggerAutoSave({ title: val });
   };
 
   const toggleHeader = () => {
     const nextVal = !showHeader;
     setShowHeader(nextVal);
-    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(contentHtml, title, headerText, footerText, nextVal, showFooter);
+    triggerAutoSave({ showHeader: nextVal });
   };
 
   const toggleFooter = () => {
     const nextVal = !showFooter;
     setShowFooter(nextVal);
-    const contentHtml = editorRef.current ? editorRef.current.innerHTML : '';
-    triggerAutoSave(contentHtml, title, headerText, footerText, showHeader, nextVal);
+    triggerAutoSave({ showFooter: nextVal });
   };
 
   // Tab Key Indentation Handler
@@ -273,7 +278,7 @@ export default function App() {
     const contentHtml = editorRef.current.innerHTML;
     updateStats(contentHtml);
     checkActiveFormats();
-    triggerAutoSave(contentHtml, title, headerText, footerText, showHeader, showFooter);
+    triggerAutoSave();
   };
 
   const checkActiveFormats = () => {
@@ -440,23 +445,18 @@ export default function App() {
             margin: 0.75in;
           }
 
-          .print-header-spacer { height: 40px; }
-          .print-footer-spacer { height: 40px; }
+          .print-header-spacer { height: 60px; }
+          .print-footer-spacer { height: 60px; }
 
           .print-header-fixed {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
-            height: 35px;
             border-bottom: 1px solid #e2e8f0;
-            font-size: 10pt;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            font-size: 9pt;
+            padding-bottom: 4px;
+            white-space: pre-wrap;
           }
 
           .print-footer-fixed {
@@ -464,18 +464,15 @@ export default function App() {
             bottom: 0;
             left: 0;
             right: 0;
-            height: 35px;
             border-top: 1px solid #e2e8f0;
             font-size: 9pt;
-            color: #94a3b8;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            padding-top: 4px;
+            white-space: pre-wrap;
           }
         }
       `}</style>
 
-      {/* Printable Native Table Layout for Repeating Header/Footer */}
+      {/* Printable Native Table Layout for Multi-line Header & Footer */}
       <div className="hidden print:block w-full">
         <table className="w-full">
           {showHeader && (
@@ -483,9 +480,14 @@ export default function App() {
               <tr>
                 <td>
                   <div className="print-header-spacer" />
-                  <div className="print-header-fixed">
-                    <span>{headerText}</span>
-                    <span>{title}</span>
+                  <div 
+                    className="print-header-fixed"
+                    style={{
+                      textAlign: headerAlign,
+                      color: headerColor === 'black' ? '#000000' : '#64748b'
+                    }}
+                  >
+                    {headerText}
                   </div>
                 </td>
               </tr>
@@ -506,9 +508,14 @@ export default function App() {
               <tr>
                 <td>
                   <div className="print-footer-spacer" />
-                  <div className="print-footer-fixed">
-                    <span>{footerText}</span>
-                    <span>Word Processor Studio</span>
+                  <div 
+                    className="print-footer-fixed"
+                    style={{
+                      textAlign: footerAlign,
+                      color: footerColor === 'black' ? '#000000' : '#64748b'
+                    }}
+                  >
+                    {footerText}
                   </div>
                 </td>
               </tr>
@@ -629,6 +636,9 @@ export default function App() {
             <button onClick={() => executeCommand('bold')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.bold ? 'bg-slate-200 text-blue-600' : ''}`} title="Bold"><Bold className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('italic')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.italic ? 'bg-slate-200 text-blue-600' : ''}`} title="Italic"><Italic className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('underline')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.underline ? 'bg-slate-200 text-blue-600' : ''}`} title="Underline"><Underline className="h-4 w-4" /></button>
+            
+            {/* BULLET POINTS BUTTON */}
+            <button onClick={() => executeCommand('insertUnorderedList')} className="p-1.5 rounded hover:bg-slate-100 text-slate-700" title="Bullet List"><List className="h-4 w-4" /></button>
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
@@ -659,7 +669,7 @@ export default function App() {
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-            {/* Header / Footer Toggles using PanelTop & PanelBottom */}
+            {/* Header / Footer Toggles */}
             <button 
               onClick={toggleHeader} 
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border ${showHeader ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
@@ -683,17 +693,39 @@ export default function App() {
             {/* The White Paper Canvas */}
             <div className="mx-auto bg-white rounded shadow-xl border border-slate-300 p-16 w-[816px] min-h-[1056px] h-auto flex flex-col justify-between">
               
-              {/* Screen Header Field */}
+              {/* Screen Header Control Section */}
               {showHeader && (
-                <div className="no-print border-b border-slate-200 pb-2 mb-6 flex justify-between items-center">
-                  <input
-                    type="text"
+                <div className="no-print border-b border-slate-200 pb-3 mb-6">
+                  <div className="flex items-center justify-between mb-1.5 gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Header Controls:</span>
+                      
+                      {/* Alignment Options */}
+                      <div className="flex rounded border border-slate-200 bg-slate-50">
+                        <button onClick={() => { setHeaderAlign('left'); triggerAutoSave({ headerAlign: 'left' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerAlign === 'left' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Left</button>
+                        <button onClick={() => { setHeaderAlign('center'); triggerAutoSave({ headerAlign: 'center' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerAlign === 'center' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Center</button>
+                        <button onClick={() => { setHeaderAlign('right'); triggerAutoSave({ headerAlign: 'right' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerAlign === 'right' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Right</button>
+                      </div>
+
+                      {/* Color Options */}
+                      <div className="flex rounded border border-slate-200 bg-slate-50">
+                        <button onClick={() => { setHeaderColor('grey'); triggerAutoSave({ headerColor: 'grey' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerColor === 'grey' ? 'bg-slate-600 text-white' : 'text-slate-600'}`}>Grey</button>
+                        <button onClick={() => { setHeaderColor('black'); triggerAutoSave({ headerColor: 'black' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerColor === 'black' ? 'bg-black text-white' : 'text-slate-600'}`}>Black</button>
+                      </div>
+                    </div>
+
+                    <button onClick={toggleHeader} className="text-xs text-slate-400 hover:text-red-500 font-bold" title="Remove Header">✕ Remove Header</button>
+                  </div>
+
+                  {/* Multi-line Header Textarea */}
+                  <textarea
+                    rows={2}
                     value={headerText}
-                    onChange={handleHeaderChange}
-                    placeholder="Click to edit Header..."
-                    className="w-full bg-transparent text-xs font-semibold text-slate-400 uppercase tracking-wider focus:outline-none focus:text-slate-700"
+                    onChange={(e) => { setHeaderText(e.target.value); triggerAutoSave({ headerText: e.target.value }); }}
+                    placeholder="Type header content here (press Enter for multiple lines)..."
+                    className={`w-full bg-transparent text-xs font-semibold focus:outline-none resize-y ${headerColor === 'black' ? 'text-black' : 'text-slate-400'}`}
+                    style={{ textAlign: headerAlign }}
                   />
-                  <button onClick={toggleHeader} className="text-xs text-slate-300 hover:text-red-500 ml-2" title="Remove Header">✕</button>
                 </div>
               )}
 
@@ -709,19 +741,41 @@ export default function App() {
                 className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px] h-auto flex-1"
               />
 
-              {/* Screen Footer Field */}
+              {/* Screen Footer Control Section */}
               {showFooter && (
-                <div className="no-print border-t border-slate-200 pt-2 mt-6 flex justify-between items-center text-xs text-slate-400">
-                  <input
-                    type="text"
+                <div className="no-print border-t border-slate-200 pt-3 mt-6">
+                  {/* Multi-line Footer Textarea */}
+                  <textarea
+                    rows={2}
                     value={footerText}
-                    onChange={handleFooterChange}
-                    placeholder="Click to edit Footer..."
-                    className="bg-transparent font-medium text-slate-400 focus:outline-none focus:text-slate-700 w-1/2"
+                    onChange={(e) => { setFooterText(e.target.value); triggerAutoSave({ footerText: e.target.value }); }}
+                    placeholder="Type footer content here (press Enter for multiple lines)..."
+                    className={`w-full bg-transparent text-xs font-semibold focus:outline-none resize-y mb-1.5 ${footerColor === 'black' ? 'text-black' : 'text-slate-400'}`}
+                    style={{ textAlign: footerAlign }}
                   />
-                  <div className="flex items-center gap-3">
-                    <span>Document Length: ~{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
-                    <button onClick={toggleFooter} className="text-xs text-slate-300 hover:text-red-500" title="Remove Footer">✕</button>
+
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Footer Controls:</span>
+                      
+                      {/* Alignment Options */}
+                      <div className="flex rounded border border-slate-200 bg-slate-50">
+                        <button onClick={() => { setFooterAlign('left'); triggerAutoSave({ footerAlign: 'left' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerAlign === 'left' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Left</button>
+                        <button onClick={() => { setFooterAlign('center'); triggerAutoSave({ footerAlign: 'center' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerAlign === 'center' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Center</button>
+                        <button onClick={() => { setFooterAlign('right'); triggerAutoSave({ footerAlign: 'right' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerAlign === 'right' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Right</button>
+                      </div>
+
+                      {/* Color Options */}
+                      <div className="flex rounded border border-slate-200 bg-slate-50">
+                        <button onClick={() => { setFooterColor('grey'); triggerAutoSave({ footerColor: 'grey' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerColor === 'grey' ? 'bg-slate-600 text-white' : 'text-slate-600'}`}>Grey</button>
+                        <button onClick={() => { setFooterColor('black'); triggerAutoSave({ footerColor: 'black' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerColor === 'black' ? 'bg-black text-white' : 'text-slate-600'}`}>Black</button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span>Document Length: ~{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
+                      <button onClick={toggleFooter} className="text-xs text-slate-400 hover:text-red-500 font-bold" title="Remove Footer">✕ Remove Footer</button>
+                    </div>
                   </div>
                 </div>
               )}
