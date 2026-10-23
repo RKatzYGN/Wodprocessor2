@@ -293,8 +293,31 @@ export default function App() {
     });
   };
 
-  const executeCommand = (cmd, val = null) => {
-    document.execCommand(cmd, false, val);
+const executeCommand = (cmd, val = null) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+
+    if (cmd === 'insertUnorderedList') {
+      // Ensure browser styleWithCSS is active for list generation
+      document.execCommand('styleWithCSS', false, false);
+      
+      // Execute the standard bullet list command
+      document.execCommand('insertUnorderedList', false, null);
+
+      // Force-format any unnested text into clean list items
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const parentLi = selection.anchorNode.parentElement?.closest('li');
+        if (!parentLi) {
+          document.execCommand('formatBlock', false, 'p');
+          document.execCommand('insertUnorderedList', false, null);
+        }
+      }
+    } else {
+      document.execCommand(cmd, false, val);
+    }
+
     checkActiveFormats();
     handleEditorInput();
   };
