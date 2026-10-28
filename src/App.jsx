@@ -3,7 +3,7 @@ import {
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode, PanelTop, PanelBottom, List
+  FileCode, PanelTop, PanelBottom, List, HardDrive
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -330,7 +330,113 @@ const executeCommand = (cmd, val = null) => {
   };
   const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
   const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
+// Save directly to USB / local storage
+  const handleSaveToUSB = async () => {
+    const documentPayload = JSON.stringify({
+      title: title || 'Untitled Document',
+      content: editorRef.current ? editorRef.current.innerHTML : '',
+      headerText,
+      footerText,
+      showHeader,
+      showFooter,
+      headerColor,
+      footerColor,
+      headerAlign,
+      footerAlign,
+      savedAt: new Date().toISOString()
+    }, null, 2);
 
+    // If browser supports the native File System Access API (Chrome, Edge)
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: `${title || 'document'}.wpdoc`,
+          types: [{
+            description: 'Word Processor Document (*.wpdoc)',
+            accept: { 'application/json': ['.wpdoc', '.json'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(documentPayload);
+        await writable.close();
+        setSaveStatus('Saved to USB / Disk');
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('Failed to save file:', err);
+        }
+      }
+    } else {
+      // Fallback for browsers without direct file picker access
+      const blob = new Blob([documentPayload], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title || 'document'}.wpdoc`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  // Open directly from USB / local storage
+  const handleOpenFromUSB = async () => {
+    // If browser supports the native File System Access API
+    if (window.showOpenFilePicker) {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{
+            description: 'Word Processor Document (*.wpdoc, *.json)',
+            accept: { 'application/json': ['.wpdoc', '.json'] },
+          }],
+        });
+        const file = await handle.getFile();
+        const text = await file.text();
+        applyLoadedData(text);
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('Failed to open file:', err);
+        }
+      }
+    } else {
+      // Fallback file input
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.wpdoc,.json';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const text = await file.text();
+          applyLoadedData(text);
+        }
+      };
+      input.click();
+    }
+  };
+
+  const applyLoadedData = (rawJson) => {
+    try {
+      const data = JSON.parse(rawJson);
+      setTitle(data.title || 'Imported Document');
+      setHeaderText(data.headerText || '');
+      setFooterText(data.footerText || '');
+      setShowHeader(data.showHeader !== undefined ? data.showHeader : true);
+      setShowFooter(data.showFooter !== undefined ? data.showFooter : true);
+      setHeaderColor(data.headerColor || 'grey');
+      setFooterColor(data.footerColor || 'grey');
+      setHeaderAlign(data.headerAlign || 'center');
+      setFooterAlign(data.footerAlign || 'center');
+
+      if (editorRef.current) {
+        editorRef.current.innerHTML = data.content || '<p></p>';
+      }
+      updateStats(data.content || '');
+      triggerAutoSave(data);
+      setSaveStatus('Loaded from USB');
+    } catch (err) {
+      alert('Could not parse document file.');
+    }
+  };
   const handlePrint = () => window.print();
 
   const exportAsTxt = () => {
@@ -580,7 +686,21 @@ const executeCommand = (cmd, val = null) => {
           <button onClick={handlePrint} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <Printer className="h-4 w-4 text-slate-500" /> Print
           </button>
+<button 
+  onClick={handleOpenFromUSB} 
+  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+  title="Open from USB drive or local disk"
+>
+  <FolderOpen className="h-4 w-4 text-slate-500" /> Open from USB
+</button>
 
+<button 
+  onClick={handleSaveToUSB} 
+  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+  title="Save document directly to USB drive or local disk"
+>
+  <HardDrive className="h-4 w-4 text-slate-500" /> Save to USB
+</button>
           <div className="relative group">
             <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
               <Download className="h-4 w-4" /> Export
