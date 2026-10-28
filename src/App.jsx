@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import mammoth from 'mammoth';
 import { 
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
