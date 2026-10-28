@@ -381,62 +381,128 @@ const executeCommand = (cmd, val = null) => {
   };
 
   // Open directly from USB / local storage
-  const handleOpenFromUSB = async () => {
-    // If browser supports the native File System Access API
+ const handleOpenFromUSB = async () => {
+    // 1. Native File System Access API (Chrome, Edge)
     if (window.showOpenFilePicker) {
       try {
         const [handle] = await window.showOpenFilePicker({
           types: [{
-            description: 'Word Processor Document (*.wpdoc, *.json)',
-            accept: { 'application/json': ['.wpdoc', '.json'] },
+            description: 'Supported Documents (*.wpdoc, *.docx, *.html, *.txt)',
+            accept: {
+              'application/json': ['.wpdoc', '.json'],
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+              'text/html': ['.html', '.htm'],
+              'text/plain': ['.txt'],
+              'application/msword': ['.doc']
+            },
           }],
         });
         const file = await handle.getFile();
-        const text = await file.text();
-        applyLoadedData(text);
+        await parseAndLoadFile(file);
       } catch (err) {
         if (err.name !== 'AbortError') {
           console.error('Failed to open file:', err);
         }
       }
     } else {
-      // Fallback file input
+      // 2. Fallback File Input (Safari, Firefox)
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.wpdoc,.json';
+      input.accept = '.wpdoc,.json,.docx,.doc,.html,.htm,.txt';
       input.onchange = async (e) => {
         const file = e.target.files[0];
         if (file) {
-          const text = await file.text();
-          applyLoadedData(text);
+          await parseAndLoadFile(file);
         }
       };
       input.click();
     }
   };
 
-  const applyLoadedData = (rawJson) => {
-    try {
-      const data = JSON.parse(rawJson);
-      setTitle(data.title || 'Imported Document');
-      setHeaderText(data.headerText || '');
-      setFooterText(data.footerText || '');
-      setShowHeader(data.showHeader !== undefined ? data.showHeader : true);
-      setShowFooter(data.showFooter !== undefined ? data.showFooter : true);
-      setHeaderColor(data.headerColor || 'grey');
-      setFooterColor(data.footerColor || 'grey');
-      setHeaderAlign(data.headerAlign || 'center');
-      setFooterAlign(data.footerAlign || 'center');
+  const parseAndLoadFile = async (file) => {
+    const fileName = file.name || 'Imported Document';
+    const cleanTitle = fileName.replace(/\.[^/.]+$/, "");
+    const ext = fileName.split('.').pop().toLowerCase();
 
-      if (editorRef.current) {
-        editorRef.current.innerHTML = data.content || '<p></p>';
+    try {
+      // A. Word Documents (.docx)
+      if (ext === 'docx') {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        const html = result.value || '<p></p>';
+        applyDocumentContent(cleanTitle, html);
+        setSaveStatus(`Loaded ${fileName}`);
+        return;
       }
-      updateStats(data.content || '');
-      triggerAutoSave(data);
-      setSaveStatus('Loaded from USB');
+
+      // B. Legacy Word Documents (.doc)
+      if (ext === 'doc') {
+        alert('Legacy .doc files (Word 97-2003) are binary files. Please save or export your document as .docx or .txt in Word first, then open it here.');
+        return;
+      }
+
+      // C. Plain Text (.txt)
+      if (ext === 'txt') {
+        const text = await file.text();
+        // Convert linebreaks to HTML paragraphs
+        const formattedHtml = text
+          .split(/\r?\n/)
+          .map(line => `<p>${line.trim() ? line : '&nbsp;'}</p>`)
+          .join('');
+        applyDocumentContent(cleanTitle, formattedHtml);
+        setSaveStatus(`Loaded ${fileName}`);
+        return;
+      }
+
+      // D. Web Pages (.html, .htm)
+      if (ext === 'html' || ext === 'htm') {
+        const htmlContent = await file.text();
+        const parser = new DOMParser();
+        const parsedDoc = parser.parseFromString(htmlContent, 'text/html');
+        const extractedHtml = parsedDoc.body ? parsedDoc.body.innerHTML : htmlContent;
+        applyDocumentContent(cleanTitle, extractedHtml);
+        setSaveStatus(`Loaded ${fileName}`);
+        return;
+      }
+
+      // E. Native App Documents (.wpdoc, .json)
+      const rawText = await file.text();
+      try {
+        const data = JSON.parse(rawText);
+        setTitle(data.title || cleanTitle);
+        setHeaderText(data.headerText || '');
+        setFooterText(data.footerText || '');
+        setShowHeader(data.showHeader !== undefined ? data.showHeader : true);
+        setShowFooter(data.showFooter !== undefined ? data.showFooter : true);
+        setHeaderColor(data.headerColor || 'grey');
+        setFooterColor(data.footerColor || 'grey');
+        setHeaderAlign(data.headerAlign || 'center');
+        setFooterAlign(data.footerAlign || 'center');
+
+        if (editorRef.current) {
+          editorRef.current.innerHTML = data.content || '<p></p>';
+        }
+        updateStats(data.content || '');
+        triggerAutoSave(data);
+        setSaveStatus(`Loaded ${fileName}`);
+      } catch {
+        // Fallback if not valid JSON: treat as plain text
+        applyDocumentContent(cleanTitle, `<p>${rawText}</p>`);
+        setSaveStatus(`Loaded ${fileName}`);
+      }
     } catch (err) {
-      alert('Could not parse document file.');
+      console.error('File parsing error:', err);
+      alert(`Could not open ${fileName}. The file format may be corrupted.`);
     }
+  };
+
+  const applyDocumentContent = (newTitle, newContent) => {
+    setTitle(newTitle);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = newContent;
+    }
+    updateStats(newContent);
+    triggerAutoSave({ title: newTitle, content: newContent });
   };
   const handlePrint = () => window.print();
 
