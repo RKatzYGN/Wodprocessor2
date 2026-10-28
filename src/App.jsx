@@ -332,51 +332,99 @@ const executeCommand = (cmd, val = null) => {
   const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
   const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
 // Save directly to USB / local storage
-  const handleSaveToUSB = async () => {
-    const documentPayload = JSON.stringify({
-      title: title || 'Untitled Document',
-      content: editorRef.current ? editorRef.current.innerHTML : '',
-      headerText,
-      footerText,
-      showHeader,
-      showFooter,
-      headerColor,
-      footerColor,
-      headerAlign,
-      footerAlign,
-      savedAt: new Date().toISOString()
-    }, null, 2);
+ const handleSaveToUSB = async (format = 'wpdoc') => {
+    const rawContent = editorRef.current ? editorRef.current.innerHTML : '';
+    const safeTitle = title || 'document';
+    let filePayload = '';
+    let mimeType = 'text/plain';
+    let fileExtension = format;
 
-    // If browser supports the native File System Access API (Chrome, Edge)
+    if (format === 'doc') {
+      // Microsoft Word compatible HTML wrapper
+      mimeType = 'application/msword';
+      fileExtension = 'doc';
+      filePayload = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' 
+              xmlns:w='urn:schemas-microsoft-com:office:word' 
+              xmlns='http://www.w3.org/TR/REC-html40'>
+        <head>
+          <meta charset="utf-8">
+          <title>${safeTitle}</title>
+          <style>
+            body { font-family: ${fontFamily || 'Arial'}, sans-serif; font-size: 11pt; line-height: ${lineSpacing || 1.15}; }
+            .header { text-align: ${headerAlign}; color: ${headerColor === 'black' ? '#000' : '#666'}; font-size: 9pt; border-bottom: 1px solid #ddd; margin-bottom: 20px; white-space: pre-wrap; }
+            .footer { text-align: ${footerAlign}; color: ${footerColor === 'black' ? '#000' : '#666'}; font-size: 9pt; border-top: 1px solid #ddd; margin-top: 20px; white-space: pre-wrap; }
+          </style>
+        </head>
+        <body>
+          ${showHeader && headerText ? `<div class="header">${headerText}</div>` : ''}
+          ${rawContent}
+          ${showFooter && footerText ? `<div class="footer">${footerText}</div>` : ''}
+        </body>
+        </html>
+      `;
+    } else if (format === 'txt') {
+      mimeType = 'text/plain';
+      fileExtension = 'txt';
+      const temp = document.createElement('div');
+      temp.innerHTML = rawContent;
+      const plainText = temp.innerText || temp.textContent || '';
+      
+      filePayload = [
+        showHeader && headerText ? `--- HEADER ---\n${headerText}\n\n` : '',
+        plainText,
+        showFooter && footerText ? `\n\n--- FOOTER ---\n${footerText}` : ''
+      ].join('');
+    } else {
+      // Native App Document (.wpdoc / .json)
+      mimeType = 'application/json';
+      fileExtension = 'wpdoc';
+      filePayload = JSON.stringify({
+        title: safeTitle,
+        content: rawContent,
+        headerText,
+        footerText,
+        showHeader,
+        showFooter,
+        headerColor,
+        footerColor,
+        headerAlign,
+        footerAlign,
+        savedAt: new Date().toISOString()
+      }, null, 2);
+    }
+
+    // Direct Browser File System API (Chrome / Edge)
     if (window.showSaveFilePicker) {
       try {
         const handle = await window.showSaveFilePicker({
-          suggestedName: `${title || 'document'}.wpdoc`,
+          suggestedName: `${safeTitle}.${fileExtension}`,
           types: [{
-            description: 'Word Processor Document (*.wpdoc)',
-            accept: { 'application/json': ['.wpdoc', '.json'] },
+            description: format === 'doc' ? 'Microsoft Word Document (*.doc)' : format === 'txt' ? 'Text Document (*.txt)' : 'Word Processor Document (*.wpdoc)',
+            accept: { [mimeType]: [`.${fileExtension}`] },
           }],
         });
         const writable = await handle.createWritable();
-        await writable.write(documentPayload);
+        await writable.write(filePayload);
         await writable.close();
-        setSaveStatus('Saved to USB / Disk');
+        setSaveStatus(`Saved as .${fileExtension}`);
       } catch (err) {
         if (err.name !== 'AbortError') {
-          console.error('Failed to save file:', err);
+          console.error('Save error:', err);
         }
       }
     } else {
       // Fallback for browsers without direct file picker access
-      const blob = new Blob([documentPayload], { type: 'application/json' });
+      const blob = new Blob([filePayload], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${title || 'document'}.wpdoc`;
+      a.download = `${safeTitle}.${fileExtension}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      setSaveStatus(`Saved as .${fileExtension}`);
     }
   };
 
@@ -761,13 +809,34 @@ const executeCommand = (cmd, val = null) => {
   <FolderOpen className="h-4 w-4 text-slate-500" /> Open from USB
 </button>
 
-<button 
-  onClick={handleSaveToUSB} 
-  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-  title="Save document directly to USB drive or local disk"
->
-  <HardDrive className="h-4 w-4 text-slate-500" /> Save to USB
-</button>
+<div className="relative group">
+  <button 
+    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+    title="Save to USB drive or local disk"
+  >
+    <HardDrive className="h-4 w-4 text-slate-500" /> Save to USB / Disk
+  </button>
+  <div className="absolute left-0 top-full mt-1 hidden w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg group-hover:block z-30">
+    <button 
+      onClick={() => handleSaveToUSB('doc')} 
+      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+    >
+      <FileText className="h-4 w-4 text-blue-600" /> Word Document (.doc)
+    </button>
+    <button 
+      onClick={() => handleSaveToUSB('txt')} 
+      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+    >
+      <FileCode className="h-4 w-4 text-slate-500" /> Plain Text (.txt)
+    </button>
+    <button 
+      onClick={() => handleSaveToUSB('wpdoc')} 
+      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+    >
+      <HardDrive className="h-4 w-4 text-emerald-600" /> Full Project (.wpdoc)
+    </button>
+  </div>
+</div>
           <div className="relative group">
             <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
               <Download className="h-4 w-4" /> Export
