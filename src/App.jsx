@@ -1091,9 +1091,8 @@ export default function App() {
                 {isDraggingSplit && (
                   <div className="absolute inset-0 z-20 bg-transparent cursor-col-resize" />
                 )}
-               <iframe
-  src={`${activeReferenceDoc.fileData}#toolbar=1`}
-  sandbox="allow-scripts allow-same-origin"
+           <iframe
+  src={`https://docs.google.com/viewer?url=${encodeURIComponent(activeReferenceDoc.fileData)}&embedded=true`}
   className="h-full w-full border-none"
   title="Reference PDF Viewer"
 />
