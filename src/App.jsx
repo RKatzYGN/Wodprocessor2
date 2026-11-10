@@ -16,6 +16,13 @@ import {
   createUserWithEmailAndPassword 
 } from 'firebase/auth';
 import { 
+  getStorage, 
+  ref as storageRef, 
+  uploadBytesResumable, 
+  getDownloadURL, 
+  deleteObject 
+} from 'firebase/storage';
+import { 
   getFirestore, 
   collection, 
   doc, 
@@ -39,6 +46,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -355,7 +363,7 @@ export default function App() {
   const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
   const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
 
-  // --- Teacher Reference PDF Upload Handler ---
+ // --- Teacher Reference PDF Upload Handler (Supports Large PDFs) ---
   const handleTeacherUpload = async (e) => {
     e.preventDefault();
     if (!uploadFile || !uploadTitle || !uploadAssignment) {
@@ -363,38 +371,61 @@ export default function App() {
       return;
     }
 
+    // Set a generous limit suitable for multi-page documents (e.g., 50 MB)
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+    if (uploadFile.size > MAX_FILE_SIZE) {
+      alert(`File is too large (${(uploadFile.size / 1024 / 1024).toFixed(1)} MB). Please select a PDF under 50 MB.`);
+      return;
+    }
+
     setIsUploading(true);
 
     try {
-      // Read PDF file as Base64 Data URL so it is universally viewable in browser without backend setup
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const fileDataUrl = reader.result;
-        const refDocId = 'ref_' + Date.now();
-        const dateString = new Date().toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric'
-        });
+      const fileId = 'ref_' + Date.now();
+      const storagePath = `reference_materials/${fileId}_${uploadFile.name}`;
+      const fileRef = storageRef(storage, storagePath);
 
-        await setDoc(doc(db, 'classroom_reference_materials', refDocId), {
-          id: refDocId,
-          title: uploadTitle,
-          assignment: uploadAssignment,
-          dateUploaded: dateString,
-          timestamp: Date.now(),
-          uploadedBy: user.email,
-          fileData: fileDataUrl
-        });
+      // Upload raw binary stream directly to Google Cloud Storage
+      const uploadTask = uploadBytesResumable(fileRef, uploadFile);
 
-        setIsUploading(false);
-        setIsUploadModalOpen(false);
-        setUploadTitle('');
-        setUploadAssignment('');
-        setUploadFile(null);
-      };
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          // Track percentage progress if desired
+        },
+        (error) => {
+          console.error("Storage upload failed:", error);
+          alert("Upload failed. Please check your Firebase Storage security rules.");
+          setIsUploading(false);
+        },
+        async () => {
+          // Retrieve the permanent cloud link
+          const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+          const dateString = new Date().toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
 
-      reader.readAsDataURL(uploadFile);
+          // Save metadata & cloud link to Firestore
+          await setDoc(doc(db, 'classroom_reference_materials', fileId), {
+            id: fileId,
+            title: uploadTitle,
+            assignment: uploadAssignment,
+            dateUploaded: dateString,
+            timestamp: Date.now(),
+            uploadedBy: user.email,
+            fileData: downloadUrl, // Direct HTTPS link to the cloud PDF
+            storagePath: storagePath
+          });
+
+          setIsUploading(false);
+          setIsUploadModalOpen(false);
+          setUploadTitle('');
+          setUploadAssignment('');
+          setUploadFile(null);
+        }
+      );
     } catch (err) {
       console.error("Upload error:", err);
       alert("Failed to upload reference document.");
@@ -402,12 +433,20 @@ export default function App() {
     }
   };
 
-  const deleteReferenceDoc = async (id, e) => {
+  const deleteReferenceDoc = async (docItem, e) => {
     e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this reference document?")) return;
     try {
-      await deleteDoc(doc(db, 'classroom_reference_materials', id));
-      if (activeReferenceDoc?.id === id) {
+      // Delete document record from Firestore
+      await deleteDoc(doc(db, 'classroom_reference_materials', docItem.id));
+
+      // Delete the actual physical PDF from Firebase Storage bucket
+      if (docItem.storagePath) {
+        const fileRef = storageRef(storage, docItem.storagePath);
+        await deleteObject(fileRef).catch((err) => console.warn("Storage cleanup error:", err));
+      }
+
+      if (activeReferenceDoc?.id === docItem.id) {
         setActiveReferenceDoc(null);
       }
     } catch (err) {
