@@ -16,13 +16,6 @@ import {
   createUserWithEmailAndPassword 
 } from 'firebase/auth';
 import { 
-  getStorage, 
-  ref as storageRef, 
-  uploadBytesResumable, 
-  getDownloadURL, 
-  deleteObject 
-} from 'firebase/storage';
-import { 
   getFirestore, 
   collection, 
   doc, 
@@ -30,6 +23,13 @@ import {
   deleteDoc, 
   onSnapshot 
 } from 'firebase/firestore';
+import { 
+  getStorage, 
+  ref as storageRef, 
+  uploadBytesResumable, 
+  getDownloadURL, 
+  deleteObject 
+} from 'firebase/storage';
 
 // ----------------------------------------------------------------------
 // Firebase Configuration
@@ -58,7 +58,7 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // User Role (Teacher or Student toggle for demonstration)
+  // Teacher Authentication & Role State
   const [isTeacher, setIsTeacher] = useState(false);
   const [isTeacherPasswordModalOpen, setIsTeacherPasswordModalOpen] = useState(false);
   const [teacherPasswordInput, setTeacherPasswordInput] = useState('');
@@ -92,12 +92,13 @@ export default function App() {
   const [charCount, setCharCount] = useState(0);
   const [pageCount, setPageCount] = useState(1);
 
-  // Reference Documents & Split Screen State
+  // Reference Documents & Resizable Split-Screen State
   const [referenceDocs, setReferenceDocs] = useState([]);
-  const [activeReferenceDoc, setActiveReferenceDoc] = useState(null); // Current doc displayed in split-screen
+  const [activeReferenceDoc, setActiveReferenceDoc] = useState(null);
   const [isRefModalOpen, setIsRefModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-
+  const [splitWidth, setSplitWidth] = useState(50); // percentage (50% default)
+  const [isDraggingSplit, setIsDraggingSplit] = useState(false);
 
   // Teacher Upload Form State
   const [uploadTitle, setUploadTitle] = useState('');
@@ -108,7 +109,7 @@ export default function App() {
   const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
-  // 1. Auth Listener
+  // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -117,7 +118,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Sync User's Documents
+  // Sync User's Documents
   useEffect(() => {
     if (!user || !db) return;
 
@@ -137,7 +138,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // 3. Sync Classroom Reference Documents (Shared across all students/teachers)
+  // Sync Shared Classroom Reference Materials
   useEffect(() => {
     if (!db) return;
     const refCollection = collection(db, 'classroom_reference_materials');
@@ -150,7 +151,34 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Auth Operations
+  // Draggable Split Screen Mouse Events
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDraggingSplit) return;
+      const newWidth = (e.clientX / window.innerWidth) * 100;
+      if (newWidth >= 20 && newWidth <= 80) {
+        setSplitWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (isDraggingSplit) {
+        setIsDraggingSplit(false);
+      }
+    };
+
+    if (isDraggingSplit) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingSplit]);
+
+  // Auth Handlers
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -172,6 +200,30 @@ export default function App() {
     setDocuments([]);
     setCurrentDocId(null);
     setActiveReferenceDoc(null);
+    setIsTeacher(false);
+  };
+
+  // Teacher Mode Access Control
+  const handleTeacherModeToggle = () => {
+    if (isTeacher) {
+      setIsTeacher(false);
+    } else {
+      setTeacherPasswordInput('');
+      setTeacherPasswordError('');
+      setIsTeacherPasswordModalOpen(true);
+    }
+  };
+
+  const handleVerifyTeacherPassword = (e) => {
+    e.preventDefault();
+    if (teacherPasswordInput === 'TeachYGN12!') {
+      setIsTeacher(true);
+      setIsTeacherPasswordModalOpen(false);
+      setTeacherPasswordInput('');
+      setTeacherPasswordError('');
+    } else {
+      setTeacherPasswordError('Incorrect teacher password. Please try again.');
+    }
   };
 
   // Document Operations
@@ -307,7 +359,7 @@ export default function App() {
     triggerAutoSave({ showFooter: nextVal });
   };
 
-  // Tab Key Indentation Handler
+  // Tab Key Indentation
   const handleKeyDown = (e) => {
     if (e.key === 'Tab') {
       e.preventDefault();
@@ -367,30 +419,7 @@ export default function App() {
   const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
   const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
 
-  const handleTeacherModeToggle = () => {
-    if (isTeacher) {
-      // Switching back to student mode requires no password
-      setIsTeacher(false);
-    } else {
-      // Prompt for password to unlock teacher privileges
-      setTeacherPasswordInput('');
-      setTeacherPasswordError('');
-      setIsTeacherPasswordModalOpen(true);
-    }
-  };
-
-  const handleVerifyTeacherPassword = (e) => {
-    e.preventDefault();
-    if (teacherPasswordInput === 'TeachYGN12!') {
-      setIsTeacher(true);
-      setIsTeacherPasswordModalOpen(false);
-      setTeacherPasswordInput('');
-      setTeacherPasswordError('');
-    } else {
-      setTeacherPasswordError('Incorrect teacher password. Please try again.');
-    }
-  };
- // --- Teacher Reference PDF Upload Handler (Supports Large PDFs) ---
+  // Teacher Reference PDF Upload (Direct Cloud Storage Streaming)
   const handleTeacherUpload = async (e) => {
     e.preventDefault();
     if (!uploadFile || !uploadTitle || !uploadAssignment) {
@@ -398,7 +427,6 @@ export default function App() {
       return;
     }
 
-    // Set a generous limit suitable for multi-page documents (e.g., 50 MB)
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
     if (uploadFile.size > MAX_FILE_SIZE) {
       alert(`File is too large (${(uploadFile.size / 1024 / 1024).toFixed(1)} MB). Please select a PDF under 50 MB.`);
@@ -412,21 +440,17 @@ export default function App() {
       const storagePath = `reference_materials/${fileId}_${uploadFile.name}`;
       const fileRef = storageRef(storage, storagePath);
 
-      // Upload raw binary stream directly to Google Cloud Storage
       const uploadTask = uploadBytesResumable(fileRef, uploadFile);
 
       uploadTask.on(
         'state_changed',
-        (snapshot) => {
-          // Track percentage progress if desired
-        },
+        () => {},
         (error) => {
           console.error("Storage upload failed:", error);
-          alert("Upload failed. Please check your Firebase Storage security rules.");
+          alert("Upload failed. Verify Firebase Storage is configured and rules are published.");
           setIsUploading(false);
         },
         async () => {
-          // Retrieve the permanent cloud link
           const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
           const dateString = new Date().toLocaleDateString('en-US', {
             month: 'short',
@@ -434,7 +458,6 @@ export default function App() {
             year: 'numeric'
           });
 
-          // Save metadata & cloud link to Firestore
           await setDoc(doc(db, 'classroom_reference_materials', fileId), {
             id: fileId,
             title: uploadTitle,
@@ -442,7 +465,7 @@ export default function App() {
             dateUploaded: dateString,
             timestamp: Date.now(),
             uploadedBy: user.email,
-            fileData: downloadUrl, // Direct HTTPS link to the cloud PDF
+            fileData: downloadUrl,
             storagePath: storagePath
           });
 
@@ -464,7 +487,6 @@ export default function App() {
     if (e) e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this reference document?")) return;
 
-    // Safely extract the ID whether itemOrId is an object OR a string
     const docId = typeof itemOrId === 'object' ? itemOrId?.id : itemOrId;
     const storagePath = typeof itemOrId === 'object' ? itemOrId?.storagePath : null;
 
@@ -474,18 +496,15 @@ export default function App() {
     }
 
     try {
-      // 1. Delete record from Firestore
       await deleteDoc(doc(db, 'classroom_reference_materials', docId));
 
-      // 2. Delete file from Firebase Storage if a path exists
-      if (storagePath && typeof storage !== 'undefined') {
+      if (storagePath && storage) {
         const fileRef = storageRef(storage, storagePath);
         await deleteObject(fileRef).catch((err) => {
           console.warn("Storage cleanup skipped or file not found:", err);
         });
       }
 
-      // 3. Close split-screen if this document is currently open
       if (activeReferenceDoc?.id === docId) {
         setActiveReferenceDoc(null);
       }
@@ -495,7 +514,7 @@ export default function App() {
     }
   };
 
-  // --- USB / Disk Save & Open Handlers ---
+  // USB / Disk Save Operations
   const handleSaveToUSB = async (format = 'wpdoc') => {
     const rawContent = editorRef.current ? editorRef.current.innerHTML : '';
     const safeTitle = title || 'document';
@@ -586,6 +605,7 @@ export default function App() {
     }
   };
 
+  // USB / Disk Open Operations
   const handleOpenFromUSB = async () => {
     if (window.showOpenFilePicker) {
       try {
@@ -848,7 +868,7 @@ export default function App() {
         }
       `}</style>
 
-      {/* Printable Native Table Layout for Multi-line Header & Footer */}
+      {/* Printable Native Table Layout */}
       <div className="hidden print:block w-full">
         <table className="w-full">
           {showHeader && (
@@ -930,7 +950,7 @@ export default function App() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2.5">
-          {/* Reference Materials Folder Button */}
+          {/* Reference Materials Folder */}
           <button 
             onClick={() => setIsRefModalOpen(true)}
             className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm hover:bg-purple-100 transition-colors"
@@ -940,16 +960,15 @@ export default function App() {
           </button>
 
           {/* Teacher Upload PDF Button */}
-{/* Teacher Upload PDF Button */}
-{isTeacher && (
-  <button 
-    onClick={() => setIsUploadModalOpen(true)}
-    className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm hover:bg-emerald-100 transition-colors"
-    title="Upload reference PDF for students"
-  >
-    <Upload className="h-4 w-4 text-emerald-600" /> Upload Reference PDF
-  </button>
-)}
+          {isTeacher && (
+            <button 
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm hover:bg-emerald-100 transition-colors"
+              title="Upload reference PDF for students"
+            >
+              <Upload className="h-4 w-4 text-emerald-600" /> Upload Reference PDF
+            </button>
+          )}
 
           <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
@@ -958,7 +977,7 @@ export default function App() {
             <Printer className="h-4 w-4 text-slate-500" /> Print
           </button>
 
-          {/* USB / Disk Open Button */}
+          {/* USB / Disk Open */}
           <button 
             onClick={handleOpenFromUSB} 
             className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -988,7 +1007,7 @@ export default function App() {
             </div>
           </div>
 
-      {/* Teacher/Student Role Switcher */}
+          {/* Teacher/Student Role Switcher */}
           <button 
             onClick={handleTeacherModeToggle}
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${isTeacher ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
@@ -1008,7 +1027,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Workspace (With Split Screen Option) */}
+      {/* Main Workspace (With Resizable Split Screen) */}
       <div className="main-workspace flex flex-1 overflow-hidden relative">
         {/* Document Sidebar */}
         <aside className={`no-print flex flex-col border-r border-slate-200 bg-white transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden'}`}>
@@ -1034,48 +1053,68 @@ export default function App() {
           </div>
         </aside>
 
-        {/* SPLIT PANE LEFT: Embedded PDF Reference Viewer */}
+        {/* SPLIT PANE LEFT: Resizable Embedded PDF Reference Viewer */}
         {activeReferenceDoc && (
-          <div className="split-pane-left flex flex-1 flex-col border-r-4 border-slate-300 bg-slate-100 overflow-hidden">
-            <div className="flex h-11 items-center justify-between border-b border-slate-200 bg-white px-3 shadow-sm">
-              <div className="flex items-center gap-2 truncate">
-                <BookOpen className="h-4 w-4 text-purple-600 shrink-0" />
-                <span className="text-xs font-bold text-slate-800 truncate">{activeReferenceDoc.title}</span>
-                <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 shrink-0">
-                  {activeReferenceDoc.assignment}
-                </span>
+          <>
+            <div 
+              className="split-pane-left flex flex-col bg-slate-100 overflow-hidden shrink-0"
+              style={{ width: `${splitWidth}%` }}
+            >
+              <div className="flex h-11 items-center justify-between border-b border-slate-200 bg-white px-3 shadow-sm select-none">
+                <div className="flex items-center gap-2 truncate">
+                  <BookOpen className="h-4 w-4 text-purple-600 shrink-0" />
+                  <span className="text-xs font-bold text-slate-800 truncate">{activeReferenceDoc.title}</span>
+                  <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 shrink-0">
+                    {activeReferenceDoc.assignment}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button 
+                    onClick={printReferenceDoc}
+                    className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                    title="Print this reference document"
+                  >
+                    <Printer className="h-3.5 w-3.5" /> Print PDF
+                  </button>
+                  <button 
+                    onClick={() => setActiveReferenceDoc(null)}
+                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    title="Close Reference Document (Exit Split Screen)"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button 
-                  onClick={printReferenceDoc}
-                  className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
-                  title="Print this reference document"
-                >
-                  <Printer className="h-3.5 w-3.5" /> Print PDF
-                </button>
-                <button 
-                  onClick={() => setActiveReferenceDoc(null)}
-                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  title="Close Reference Document (Exit Split Screen)"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+
+              {/* PDF Container with pointer-events guard while dragging */}
+              <div className="relative flex-1 bg-slate-700">
+                {isDraggingSplit && (
+                  <div className="absolute inset-0 z-20 bg-transparent cursor-col-resize" />
+                )}
+                <iframe
+                  src={`${activeReferenceDoc.fileData}#toolbar=1`}
+                  className="h-full w-full border-none"
+                  title="Reference PDF Viewer"
+                />
               </div>
             </div>
 
-            <div className="flex-1 bg-slate-700">
-              <iframe
-                src={`${activeReferenceDoc.fileData}#toolbar=1`}
-                className="h-full w-full border-none"
-                title="Reference PDF Viewer"
-              />
+            {/* DRAGGABLE RESIZE GUTTER */}
+            <div
+              onMouseDown={() => setIsDraggingSplit(true)}
+              className="no-print relative flex w-2 cursor-col-resize items-center justify-center bg-slate-300 hover:bg-purple-500 active:bg-purple-600 transition-colors z-30 select-none group"
+              title="Drag left or right to resize panes"
+            >
+              <div className="h-8 w-1 rounded-full bg-slate-400 group-hover:bg-white" />
             </div>
-          </div>
+          </>
         )}
 
         {/* SPLIT PANE RIGHT: Word Processor Editor */}
-        <div className="main-content flex flex-1 flex-col overflow-hidden bg-slate-200 print:hidden">
-          
+        <div 
+          className="main-content flex flex-1 flex-col overflow-hidden bg-slate-200 print:hidden"
+          style={activeReferenceDoc ? { width: `${100 - splitWidth}%` } : { width: '100%' }}
+        >
           {/* Formatting Toolbar */}
           <div className="toolbar-container no-print flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-4 py-2 shadow-sm z-10">
             <select value={fontFamily} onChange={(e) => applyFontFamily(e.target.value)} className="h-8 rounded border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700">
@@ -1326,7 +1365,7 @@ export default function App() {
 
                         {isTeacher && (
                           <button
-                            onClick={(e) => deleteReferenceDoc(docItem.id, e)}
+                            onClick={(e) => deleteReferenceDoc(docItem, e)}
                             className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
                             title="Delete Reference Document"
                           >
@@ -1351,72 +1390,6 @@ export default function App() {
       )}
 
       {/* --- TEACHER UPLOAD PDF MODAL --- */}
-        {/* --- TEACHER MODE PASSWORD VERIFICATION MODAL --- */}
-      {isTeacherPasswordModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 font-sans">
-          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <Shield className="h-5 w-5 text-amber-600" />
-                <h3 className="text-base font-bold text-slate-800">Teacher Authentication</h3>
-              </div>
-              <button 
-                onClick={() => setIsTeacherPasswordModalOpen(false)} 
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-500 mb-4">
-              Please enter the teacher security passcode to access upload and deletion controls.
-            </p>
-
-            {teacherPasswordError && (
-              <div className="mb-3 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 border border-red-200">
-                {teacherPasswordError}
-              </div>
-            )}
-
-            <form onSubmit={handleVerifyTeacherPassword} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Passcode</label>
-                <div className="relative">
-                  <Key className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <input
-                    type="password"
-                    autoFocus
-                    required
-                    placeholder="Enter teacher password"
-                    value={teacherPasswordInput}
-                    onChange={(e) => {
-                      setTeacherPasswordInput(e.target.value);
-                      setTeacherPasswordError('');
-                    }}
-                    className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-xs focus:border-amber-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsTeacherPasswordModalOpen(false)}
-                  className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-amber-700 transition-colors"
-                >
-                  Unlock Mode
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
       {isUploadModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 font-sans">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
@@ -1488,6 +1461,73 @@ export default function App() {
                       <Upload className="h-3.5 w-3.5" /> Upload to Classroom
                     </>
                   )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- TEACHER MODE PASSWORD VERIFICATION MODAL --- */}
+      {isTeacherPasswordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 font-sans">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-amber-600" />
+                <h3 className="text-base font-bold text-slate-800">Teacher Authentication</h3>
+              </div>
+              <button 
+                onClick={() => setIsTeacherPasswordModalOpen(false)} 
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-4">
+              Please enter the teacher security passcode to access upload and deletion controls.
+            </p>
+
+            {teacherPasswordError && (
+              <div className="mb-3 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 border border-red-200">
+                {teacherPasswordError}
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyTeacherPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Passcode</label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="password"
+                    autoFocus
+                    required
+                    placeholder="Enter teacher password"
+                    value={teacherPasswordInput}
+                    onChange={(e) => {
+                      setTeacherPasswordInput(e.target.value);
+                      setTeacherPasswordError('');
+                    }}
+                    className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-xs focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsTeacherPasswordModalOpen(false)}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-amber-700 transition-colors"
+                >
+                  Unlock Mode
                 </button>
               </div>
             </form>
