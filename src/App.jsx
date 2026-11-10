@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import mammoth from 'mammoth';
 import { 
   FileText, Plus, Trash2, Printer, Download,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   FolderOpen, Check, Palette, Highlighter, Clock, LogOut, Key, Mail,
-  FileCode, PanelTop, PanelBottom, List, HardDrive
+  FileCode, PanelTop, PanelBottom, List, HardDrive, BookOpen, Upload,
+  X, Columns, Maximize2, Shield, User
 } from 'lucide-react';
+import mammoth from 'mammoth';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -49,6 +50,9 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
+  // User Role (Teacher or Student toggle for demonstration)
+  const [isTeacher, setIsTeacher] = useState(false);
+
   // Documents State
   const [documents, setDocuments] = useState([]);
   const [currentDocId, setCurrentDocId] = useState(null);
@@ -61,10 +65,10 @@ export default function App() {
   const [showFooter, setShowFooter] = useState(true);
   const [headerText, setHeaderText] = useState('DOCUMENT HEADER\nSecond Line Header');
   const [footerText, setFooterText] = useState('Document Footer\nPage Information');
-  const [headerColor, setHeaderColor] = useState('grey'); // 'grey' | 'black'
-  const [footerColor, setFooterColor] = useState('grey'); // 'grey' | 'black'
-  const [headerAlign, setHeaderAlign] = useState('center'); // 'left' | 'center' | 'right'
-  const [footerAlign, setFooterAlign] = useState('center'); // 'left' | 'center' | 'right'
+  const [headerColor, setHeaderColor] = useState('grey');
+  const [footerColor, setFooterColor] = useState('grey');
+  const [headerAlign, setHeaderAlign] = useState('center');
+  const [footerAlign, setFooterAlign] = useState('center');
 
   // Stats & Formatting State
   const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, underline: false, align: 'left' });
@@ -77,10 +81,22 @@ export default function App() {
   const [charCount, setCharCount] = useState(0);
   const [pageCount, setPageCount] = useState(1);
 
+  // Reference Documents & Split Screen State
+  const [referenceDocs, setReferenceDocs] = useState([]);
+  const [activeReferenceDoc, setActiveReferenceDoc] = useState(null); // Current doc displayed in split-screen
+  const [isRefModalOpen, setIsRefModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+
+  // Teacher Upload Form State
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadAssignment, setUploadAssignment] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+
   const editorRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
-  // Auth Listener
+  // 1. Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -89,12 +105,11 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Firestore Sync
+  // 2. Sync User's Documents
   useEffect(() => {
     if (!user || !db) return;
 
     const docsCollection = collection(db, 'users', user.uid, 'documents');
-
     const unsubscribe = onSnapshot(docsCollection, (snapshot) => {
       const fetchedDocs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       fetchedDocs.sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
@@ -110,7 +125,20 @@ export default function App() {
     return () => unsubscribe();
   }, [user, currentDocId]);
 
-  // Auth Handlers
+  // 3. Sync Classroom Reference Documents (Shared across all students/teachers)
+  useEffect(() => {
+    if (!db) return;
+    const refCollection = collection(db, 'classroom_reference_materials');
+    const unsubscribe = onSnapshot(refCollection, (snapshot) => {
+      const fetchedRefs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      fetchedRefs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setReferenceDocs(fetchedRefs);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Auth Operations
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -131,6 +159,7 @@ export default function App() {
     signOut(auth);
     setDocuments([]);
     setCurrentDocId(null);
+    setActiveReferenceDoc(null);
   };
 
   // Document Operations
@@ -294,26 +323,20 @@ export default function App() {
     });
   };
 
-const executeCommand = (cmd, val = null) => {
-    if (editorRef.current) {
-      editorRef.current.focus();
-    }
+  const executeCommand = (cmd, val = null) => {
+    if (editorRef.current) editorRef.current.focus();
 
     if (cmd === 'insertUnorderedList') {
-      // Ensure browser styleWithCSS is active for list generation
-      document.execCommand('styleWithCSS', false, false);
-      
-      // Execute the standard bullet list command
-      document.execCommand('insertUnorderedList', false, null);
-
-      // Force-format any unnested text into clean list items
       const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const parentLi = selection.anchorNode.parentElement?.closest('li');
-        if (!parentLi) {
-          document.execCommand('formatBlock', false, 'p');
-          document.execCommand('insertUnorderedList', false, null);
-        }
+      if (!selection || selection.rangeCount === 0) return;
+      let node = selection.anchorNode;
+      const existingLi = node?.nodeType === 3 ? node.parentElement?.closest('li') : node?.closest?.('li');
+
+      if (existingLi) {
+        document.execCommand('outdent', false, null);
+      } else {
+        document.execCommand('formatBlock', false, 'p');
+        document.execCommand('insertUnorderedList', false, null);
       }
     } else {
       document.execCommand(cmd, false, val);
@@ -331,8 +354,69 @@ const executeCommand = (cmd, val = null) => {
   };
   const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
   const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
-// Save directly to USB / local storage
- const handleSaveToUSB = async (format = 'wpdoc') => {
+
+  // --- Teacher Reference PDF Upload Handler ---
+  const handleTeacherUpload = async (e) => {
+    e.preventDefault();
+    if (!uploadFile || !uploadTitle || !uploadAssignment) {
+      alert("Please fill out all fields and select a PDF file.");
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      // Read PDF file as Base64 Data URL so it is universally viewable in browser without backend setup
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const fileDataUrl = reader.result;
+        const refDocId = 'ref_' + Date.now();
+        const dateString = new Date().toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+
+        await setDoc(doc(db, 'classroom_reference_materials', refDocId), {
+          id: refDocId,
+          title: uploadTitle,
+          assignment: uploadAssignment,
+          dateUploaded: dateString,
+          timestamp: Date.now(),
+          uploadedBy: user.email,
+          fileData: fileDataUrl
+        });
+
+        setIsUploading(false);
+        setIsUploadModalOpen(false);
+        setUploadTitle('');
+        setUploadAssignment('');
+        setUploadFile(null);
+      };
+
+      reader.readAsDataURL(uploadFile);
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Failed to upload reference document.");
+      setIsUploading(false);
+    }
+  };
+
+  const deleteReferenceDoc = async (id, e) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this reference document?")) return;
+    try {
+      await deleteDoc(doc(db, 'classroom_reference_materials', id));
+      if (activeReferenceDoc?.id === id) {
+        setActiveReferenceDoc(null);
+      }
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  };
+
+  // --- USB / Disk Save & Open Handlers ---
+  const handleSaveToUSB = async (format = 'wpdoc') => {
     const rawContent = editorRef.current ? editorRef.current.innerHTML : '';
     const safeTitle = title || 'document';
     let filePayload = '';
@@ -340,7 +424,6 @@ const executeCommand = (cmd, val = null) => {
     let fileExtension = format;
 
     if (format === 'doc') {
-      // Microsoft Word compatible HTML wrapper
       mimeType = 'application/msword';
       fileExtension = 'doc';
       filePayload = `
@@ -376,7 +459,6 @@ const executeCommand = (cmd, val = null) => {
         showFooter && footerText ? `\n\n--- FOOTER ---\n${footerText}` : ''
       ].join('');
     } else {
-      // Native App Document (.wpdoc / .json)
       mimeType = 'application/json';
       fileExtension = 'wpdoc';
       filePayload = JSON.stringify({
@@ -394,7 +476,6 @@ const executeCommand = (cmd, val = null) => {
       }, null, 2);
     }
 
-    // Direct Browser File System API (Chrome / Edge)
     if (window.showSaveFilePicker) {
       try {
         const handle = await window.showSaveFilePicker({
@@ -409,12 +490,9 @@ const executeCommand = (cmd, val = null) => {
         await writable.close();
         setSaveStatus(`Saved as .${fileExtension}`);
       } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('Save error:', err);
-        }
+        if (err.name !== 'AbortError') console.error('Save error:', err);
       }
     } else {
-      // Fallback for browsers without direct file picker access
       const blob = new Blob([filePayload], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -428,9 +506,7 @@ const executeCommand = (cmd, val = null) => {
     }
   };
 
-  // Open directly from USB / local storage
- const handleOpenFromUSB = async () => {
-    // 1. Native File System Access API (Chrome, Edge)
+  const handleOpenFromUSB = async () => {
     if (window.showOpenFilePicker) {
       try {
         const [handle] = await window.showOpenFilePicker({
@@ -448,20 +524,15 @@ const executeCommand = (cmd, val = null) => {
         const file = await handle.getFile();
         await parseAndLoadFile(file);
       } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('Failed to open file:', err);
-        }
+        if (err.name !== 'AbortError') console.error('Failed to open file:', err);
       }
     } else {
-      // 2. Fallback File Input (Safari, Firefox)
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.wpdoc,.json,.docx,.doc,.html,.htm,.txt';
       input.onchange = async (e) => {
         const file = e.target.files[0];
-        if (file) {
-          await parseAndLoadFile(file);
-        }
+        if (file) await parseAndLoadFile(file);
       };
       input.click();
     }
@@ -473,47 +544,36 @@ const executeCommand = (cmd, val = null) => {
     const ext = fileName.split('.').pop().toLowerCase();
 
     try {
-      // A. Word Documents (.docx)
       if (ext === 'docx') {
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.convertToHtml({ arrayBuffer });
-        const html = result.value || '<p></p>';
-        applyDocumentContent(cleanTitle, html);
+        applyDocumentContent(cleanTitle, result.value || '<p></p>');
         setSaveStatus(`Loaded ${fileName}`);
         return;
       }
 
-      // B. Legacy Word Documents (.doc)
       if (ext === 'doc') {
-        alert('Legacy .doc files (Word 97-2003) are binary files. Please save or export your document as .docx or .txt in Word first, then open it here.');
+        alert('Legacy .doc files are binary. Please export your document as .docx in Word first.');
         return;
       }
 
-      // C. Plain Text (.txt)
       if (ext === 'txt') {
         const text = await file.text();
-        // Convert linebreaks to HTML paragraphs
-        const formattedHtml = text
-          .split(/\r?\n/)
-          .map(line => `<p>${line.trim() ? line : '&nbsp;'}</p>`)
-          .join('');
+        const formattedHtml = text.split(/\r?\n/).map(line => `<p>${line.trim() ? line : '&nbsp;'}</p>`).join('');
         applyDocumentContent(cleanTitle, formattedHtml);
         setSaveStatus(`Loaded ${fileName}`);
         return;
       }
 
-      // D. Web Pages (.html, .htm)
       if (ext === 'html' || ext === 'htm') {
         const htmlContent = await file.text();
         const parser = new DOMParser();
         const parsedDoc = parser.parseFromString(htmlContent, 'text/html');
-        const extractedHtml = parsedDoc.body ? parsedDoc.body.innerHTML : htmlContent;
-        applyDocumentContent(cleanTitle, extractedHtml);
+        applyDocumentContent(cleanTitle, parsedDoc.body ? parsedDoc.body.innerHTML : htmlContent);
         setSaveStatus(`Loaded ${fileName}`);
         return;
       }
 
-      // E. Native App Documents (.wpdoc, .json)
       const rawText = await file.text();
       try {
         const data = JSON.parse(rawText);
@@ -527,58 +587,36 @@ const executeCommand = (cmd, val = null) => {
         setHeaderAlign(data.headerAlign || 'center');
         setFooterAlign(data.footerAlign || 'center');
 
-        if (editorRef.current) {
-          editorRef.current.innerHTML = data.content || '<p></p>';
-        }
+        if (editorRef.current) editorRef.current.innerHTML = data.content || '<p></p>';
         updateStats(data.content || '');
         triggerAutoSave(data);
         setSaveStatus(`Loaded ${fileName}`);
       } catch {
-        // Fallback if not valid JSON: treat as plain text
         applyDocumentContent(cleanTitle, `<p>${rawText}</p>`);
         setSaveStatus(`Loaded ${fileName}`);
       }
     } catch (err) {
       console.error('File parsing error:', err);
-      alert(`Could not open ${fileName}. The file format may be corrupted.`);
+      alert(`Could not open ${fileName}.`);
     }
   };
 
   const applyDocumentContent = (newTitle, newContent) => {
     setTitle(newTitle);
-    if (editorRef.current) {
-      editorRef.current.innerHTML = newContent;
-    }
+    if (editorRef.current) editorRef.current.innerHTML = newContent;
     updateStats(newContent);
     triggerAutoSave({ title: newTitle, content: newContent });
   };
+
   const handlePrint = () => window.print();
 
-  const exportAsTxt = () => {
-    const html = editorRef.current ? editorRef.current.innerHTML : '';
-    const temp = document.createElement('div');
-    temp.innerHTML = html;
-    const plainText = temp.innerText || temp.textContent || '';
-
-    const element = document.createElement("a");
-    const file = new Blob([plainText], {type: 'text/plain'});
-    element.href = URL.createObjectURL(file);
-    element.download = `${title || 'document'}.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-  };
-
-  const exportAsHtml = () => {
-    const html = editorRef.current ? editorRef.current.innerHTML : '';
-    const fullHtml = `<!DOCTYPE html><html><head><title>${title}</title></head><body>${html}</body></html>`;
-    const element = document.createElement("a");
-    const file = new Blob([fullHtml], {type: 'text/html'});
-    element.href = URL.createObjectURL(file);
-    element.download = `${title || 'document'}.html`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+  const printReferenceDoc = () => {
+    if (!activeReferenceDoc) return;
+    const printWindow = window.open(activeReferenceDoc.fileData);
+    if (printWindow) {
+      printWindow.focus();
+      printWindow.print();
+    }
   };
 
   if (authLoading) {
@@ -664,13 +702,27 @@ const executeCommand = (cmd, val = null) => {
     );
   }
 
-  // Main Editor Screen
   return (
     <div className="app-root-container flex h-screen w-full flex-col bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
       <style>{`
+        /* BULLET & NUMBERED LIST STYLING */
+        .outline-none ul {
+          list-style-type: disc !important;
+          margin-left: 1.5rem !important;
+          padding-left: 1rem !important;
+        }
+        .outline-none ol {
+          list-style-type: decimal !important;
+          margin-left: 1.5rem !important;
+          padding-left: 1rem !important;
+        }
+        .outline-none li {
+          display: list-item !important;
+        }
+
         /* PRINT STYLING */
         @media print {
-          header, sidebar, .no-print, .toolbar-container, .status-bar { 
+          header, sidebar, .no-print, .toolbar-container, .status-bar, .split-pane-left { 
             display: none !important; 
           }
 
@@ -771,7 +823,7 @@ const executeCommand = (cmd, val = null) => {
       {/* Screen Header */}
       <header className="no-print flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm z-20">
         <div className="flex items-center gap-3">
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100">
+          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Toggle Sidebar">
             <FolderOpen className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-2">
@@ -797,60 +849,75 @@ const executeCommand = (cmd, val = null) => {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          {/* Reference Materials Folder Button */}
+          <button 
+            onClick={() => setIsRefModalOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm hover:bg-purple-100 transition-colors"
+            title="Open Document Folder for Assignment References"
+          >
+            <BookOpen className="h-4 w-4 text-purple-600" /> Reference Documents ({referenceDocs.length})
+          </button>
+
+          {/* Teacher Upload PDF Button */}
+          {isTeacher && (
+            <button 
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm hover:bg-emerald-100 transition-colors"
+              title="Upload reference PDF for students"
+            >
+              <Upload className="h-4 w-4 text-emerald-600" /> Upload Reference PDF
+            </button>
+          )}
+
+          <div className="h-5 w-[1px] bg-slate-200 mx-1" />
+
+          {/* Print Button */}
           <button onClick={handlePrint} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <Printer className="h-4 w-4 text-slate-500" /> Print
           </button>
-<button 
-  onClick={handleOpenFromUSB} 
-  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-  title="Open from USB drive or local disk"
->
-  <FolderOpen className="h-4 w-4 text-slate-500" /> Open from USB
-</button>
 
-<div className="relative group">
-  <button 
-    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-    title="Save to USB drive or local disk"
-  >
-    <HardDrive className="h-4 w-4 text-slate-500" /> Save to USB / Disk
-  </button>
-  <div className="absolute left-0 top-full mt-1 hidden w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg group-hover:block z-30">
-    <button 
-      onClick={() => handleSaveToUSB('doc')} 
-      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-    >
-      <FileText className="h-4 w-4 text-blue-600" /> Word Document (.doc)
-    </button>
-    <button 
-      onClick={() => handleSaveToUSB('txt')} 
-      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-    >
-      <FileCode className="h-4 w-4 text-slate-500" /> Plain Text (.txt)
-    </button>
-    <button 
-      onClick={() => handleSaveToUSB('wpdoc')} 
-      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-    >
-      <HardDrive className="h-4 w-4 text-emerald-600" /> Full Project (.wpdoc)
-    </button>
-  </div>
-</div>
+          {/* USB / Disk Open Button */}
+          <button 
+            onClick={handleOpenFromUSB} 
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            title="Open from USB drive or local disk"
+          >
+            <FolderOpen className="h-4 w-4 text-slate-500" /> Open USB
+          </button>
+
+          {/* USB / Disk Save Dropdown */}
           <div className="relative group">
-            <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
-              <Download className="h-4 w-4" /> Export
+            <button 
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              title="Save to USB drive or local disk"
+            >
+              <HardDrive className="h-4 w-4 text-slate-500" /> Save USB
             </button>
-            <div className="absolute right-0 top-full mt-1 hidden w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-lg group-hover:block z-30">
-              <button onClick={exportAsTxt} className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                <FileText className="h-4 w-4 text-slate-400" /> Plain Text (.txt)
+            <div className="absolute left-0 top-full mt-1 hidden w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg group-hover:block z-30">
+              <button onClick={() => handleSaveToUSB('doc')} className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                <FileText className="h-4 w-4 text-blue-600" /> Word Document (.doc)
               </button>
-              <button onClick={exportAsHtml} className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                <FileCode className="h-4 w-4 text-slate-400" /> Web Page (.html)
+              <button onClick={() => handleSaveToUSB('txt')} className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                <FileCode className="h-4 w-4 text-slate-500" /> Plain Text (.txt)
+              </button>
+              <button onClick={() => handleSaveToUSB('wpdoc')} className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                <HardDrive className="h-4 w-4 text-emerald-600" /> Full Project (.wpdoc)
               </button>
             </div>
           </div>
 
+          {/* Teacher/Student Role Switcher */}
+          <button 
+            onClick={() => setIsTeacher(!isTeacher)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${isTeacher ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+            title="Toggle between Teacher and Student view"
+          >
+            {isTeacher ? <Shield className="h-3.5 w-3.5 text-amber-600" /> : <User className="h-3.5 w-3.5 text-slate-500" />}
+            {isTeacher ? 'Teacher Mode' : 'Student Mode'}
+          </button>
+
+          {/* User Profile / Logout */}
           <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
             <span className="text-xs font-semibold text-slate-600">{user.email}</span>
             <button onClick={handleLogout} className="flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200">
@@ -860,14 +927,15 @@ const executeCommand = (cmd, val = null) => {
         </div>
       </header>
 
-      {/* Main Workspace */}
+      {/* Main Workspace (With Split Screen Option) */}
       <div className="main-workspace flex flex-1 overflow-hidden relative">
+        {/* Document Sidebar */}
         <aside className={`no-print flex flex-col border-r border-slate-200 bg-white transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden'}`}>
           <div className="p-3">
             <button onClick={createNewDocument} className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 mb-3">
               <Plus className="h-4 w-4" /> New Document
             </button>
-            <div className="text-xs font-bold uppercase text-slate-400 mb-2">Your Documents ({documents.length})</div>
+            <div className="text-xs font-bold uppercase text-slate-400 mb-2">My Documents ({documents.length})</div>
             <div className="space-y-1">
               {documents.map((docItem) => (
                 <div
@@ -885,7 +953,46 @@ const executeCommand = (cmd, val = null) => {
           </div>
         </aside>
 
-        {/* Editor Area */}
+        {/* SPLIT PANE LEFT: Embedded PDF Reference Viewer */}
+        {activeReferenceDoc && (
+          <div className="split-pane-left flex flex-1 flex-col border-r-4 border-slate-300 bg-slate-100 overflow-hidden">
+            <div className="flex h-11 items-center justify-between border-b border-slate-200 bg-white px-3 shadow-sm">
+              <div className="flex items-center gap-2 truncate">
+                <BookOpen className="h-4 w-4 text-purple-600 shrink-0" />
+                <span className="text-xs font-bold text-slate-800 truncate">{activeReferenceDoc.title}</span>
+                <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 shrink-0">
+                  {activeReferenceDoc.assignment}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button 
+                  onClick={printReferenceDoc}
+                  className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                  title="Print this reference document"
+                >
+                  <Printer className="h-3.5 w-3.5" /> Print PDF
+                </button>
+                <button 
+                  onClick={() => setActiveReferenceDoc(null)}
+                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  title="Close Reference Document (Exit Split Screen)"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 bg-slate-700">
+              <iframe
+                src={`${activeReferenceDoc.fileData}#toolbar=1`}
+                className="h-full w-full border-none"
+                title="Reference PDF Viewer"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* SPLIT PANE RIGHT: Word Processor Editor */}
         <div className="main-content flex flex-1 flex-col overflow-hidden bg-slate-200 print:hidden">
           
           {/* Formatting Toolbar */}
@@ -915,8 +1022,6 @@ const executeCommand = (cmd, val = null) => {
             <button onClick={() => executeCommand('bold')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.bold ? 'bg-slate-200 text-blue-600' : ''}`} title="Bold"><Bold className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('italic')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.italic ? 'bg-slate-200 text-blue-600' : ''}`} title="Italic"><Italic className="h-4 w-4" /></button>
             <button onClick={() => executeCommand('underline')} className={`p-1.5 rounded hover:bg-slate-100 ${activeFormats.underline ? 'bg-slate-200 text-blue-600' : ''}`} title="Underline"><Underline className="h-4 w-4" /></button>
-            
-            {/* BULLET POINTS BUTTON */}
             <button onClick={() => executeCommand('insertUnorderedList')} className="p-1.5 rounded hover:bg-slate-100 text-slate-700" title="Bullet List"><List className="h-4 w-4" /></button>
 
             <div className="h-5 w-[1px] bg-slate-200 mx-1" />
@@ -977,31 +1082,25 @@ const executeCommand = (cmd, val = null) => {
                 <div className="no-print border-b border-slate-200 pb-3 mb-6">
                   <div className="flex items-center justify-between mb-1.5 gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Header Controls:</span>
-                      
-                      {/* Alignment Options */}
+                      <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Header:</span>
                       <div className="flex rounded border border-slate-200 bg-slate-50">
                         <button onClick={() => { setHeaderAlign('left'); triggerAutoSave({ headerAlign: 'left' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerAlign === 'left' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Left</button>
                         <button onClick={() => { setHeaderAlign('center'); triggerAutoSave({ headerAlign: 'center' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerAlign === 'center' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Center</button>
                         <button onClick={() => { setHeaderAlign('right'); triggerAutoSave({ headerAlign: 'right' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerAlign === 'right' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Right</button>
                       </div>
-
-                      {/* Color Options */}
                       <div className="flex rounded border border-slate-200 bg-slate-50">
                         <button onClick={() => { setHeaderColor('grey'); triggerAutoSave({ headerColor: 'grey' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerColor === 'grey' ? 'bg-slate-600 text-white' : 'text-slate-600'}`}>Grey</button>
                         <button onClick={() => { setHeaderColor('black'); triggerAutoSave({ headerColor: 'black' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${headerColor === 'black' ? 'bg-black text-white' : 'text-slate-600'}`}>Black</button>
                       </div>
                     </div>
-
-                    <button onClick={toggleHeader} className="text-xs text-slate-400 hover:text-red-500 font-bold" title="Remove Header">✕ Remove Header</button>
+                    <button onClick={toggleHeader} className="text-xs text-slate-400 hover:text-red-500 font-bold" title="Remove Header">✕</button>
                   </div>
 
-                  {/* Multi-line Header Textarea */}
                   <textarea
                     rows={2}
                     value={headerText}
                     onChange={(e) => { setHeaderText(e.target.value); triggerAutoSave({ headerText: e.target.value }); }}
-                    placeholder="Type header content here (press Enter for multiple lines)..."
+                    placeholder="Header content..."
                     className={`w-full bg-transparent text-xs font-semibold focus:outline-none resize-y ${headerColor === 'black' ? 'text-black' : 'text-slate-400'}`}
                     style={{ textAlign: headerAlign }}
                   />
@@ -1023,28 +1122,23 @@ const executeCommand = (cmd, val = null) => {
               {/* Screen Footer Control Section */}
               {showFooter && (
                 <div className="no-print border-t border-slate-200 pt-3 mt-6">
-                  {/* Multi-line Footer Textarea */}
                   <textarea
                     rows={2}
                     value={footerText}
                     onChange={(e) => { setFooterText(e.target.value); triggerAutoSave({ footerText: e.target.value }); }}
-                    placeholder="Type footer content here (press Enter for multiple lines)..."
+                    placeholder="Footer content..."
                     className={`w-full bg-transparent text-xs font-semibold focus:outline-none resize-y mb-1.5 ${footerColor === 'black' ? 'text-black' : 'text-slate-400'}`}
                     style={{ textAlign: footerAlign }}
                   />
 
                   <div className="flex items-center justify-between text-xs text-slate-400">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Footer Controls:</span>
-                      
-                      {/* Alignment Options */}
+                      <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Footer:</span>
                       <div className="flex rounded border border-slate-200 bg-slate-50">
                         <button onClick={() => { setFooterAlign('left'); triggerAutoSave({ footerAlign: 'left' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerAlign === 'left' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Left</button>
                         <button onClick={() => { setFooterAlign('center'); triggerAutoSave({ footerAlign: 'center' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerAlign === 'center' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Center</button>
                         <button onClick={() => { setFooterAlign('right'); triggerAutoSave({ footerAlign: 'right' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerAlign === 'right' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Right</button>
                       </div>
-
-                      {/* Color Options */}
                       <div className="flex rounded border border-slate-200 bg-slate-50">
                         <button onClick={() => { setFooterColor('grey'); triggerAutoSave({ footerColor: 'grey' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerColor === 'grey' ? 'bg-slate-600 text-white' : 'text-slate-600'}`}>Grey</button>
                         <button onClick={() => { setFooterColor('black'); triggerAutoSave({ footerColor: 'black' }); }} className={`px-1.5 py-0.5 text-[10px] font-semibold ${footerColor === 'black' ? 'bg-black text-white' : 'text-slate-600'}`}>Black</button>
@@ -1053,7 +1147,7 @@ const executeCommand = (cmd, val = null) => {
 
                     <div className="flex items-center gap-3">
                       <span>Document Length: ~{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
-                      <button onClick={toggleFooter} className="text-xs text-slate-400 hover:text-red-500 font-bold" title="Remove Footer">✕ Remove Footer</button>
+                      <button onClick={toggleFooter} className="text-xs text-slate-400 hover:text-red-500 font-bold" title="Remove Footer">✕</button>
                     </div>
                   </div>
                 </div>
@@ -1065,7 +1159,14 @@ const executeCommand = (cmd, val = null) => {
 
           {/* Bottom Status Bar */}
           <div className="status-bar no-print flex h-8 items-center justify-between border-t border-slate-200 bg-white px-4 text-xs font-semibold text-slate-500">
-            <div>Word Processor Studio</div>
+            <div className="flex items-center gap-2">
+              <span>Word Processor Studio</span>
+              {activeReferenceDoc && (
+                <span className="flex items-center gap-1 text-purple-600 font-bold">
+                  • Split-Screen Active ({activeReferenceDoc.title})
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-4">
               <span>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
               <span>{wordCount} Words</span>
@@ -1075,6 +1176,178 @@ const executeCommand = (cmd, val = null) => {
 
         </div>
       </div>
+
+      {/* --- REFERENCE DOCUMENTS FOLDER MODAL --- */}
+      {isRefModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 font-sans">
+          <div className="flex h-[80vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-purple-600" />
+                <h3 className="text-lg font-bold text-slate-800">Classroom Reference Materials Folder</h3>
+              </div>
+              <button onClick={() => setIsRefModalOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {referenceDocs.length === 0 ? (
+                <div className="flex h-48 flex-col items-center justify-center text-slate-400">
+                  <BookOpen className="h-10 w-10 mb-2 opacity-50" />
+                  <p className="text-sm font-medium">No reference documents uploaded yet.</p>
+                  {isTeacher && <p className="text-xs text-slate-500 mt-1">Click "Upload Reference PDF" in the header to add one.</p>}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {referenceDocs.map((docItem) => (
+                    <div 
+                      key={docItem.id} 
+                      className="flex items-center justify-between rounded-lg border border-slate-200 p-4 hover:border-purple-300 hover:bg-purple-50/30 transition-colors"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 text-purple-700 shrink-0 font-bold text-xs">
+                          PDF
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-800">{docItem.title}</h4>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                            <span className="font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded">
+                              Assignment: {docItem.assignment}
+                            </span>
+                            <span>•</span>
+                            <span>Uploaded: {docItem.dateUploaded}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setActiveReferenceDoc(docItem);
+                            setIsRefModalOpen(false);
+                          }}
+                          className="flex items-center gap-1 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-purple-700 transition-colors"
+                        >
+                          <Columns className="h-3.5 w-3.5" /> Open in Split-Screen
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const w = window.open(docItem.fileData);
+                            w?.print();
+                          }}
+                          className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+                          title="Print Document"
+                        >
+                          <Printer className="h-3.5 w-3.5" /> Print
+                        </button>
+
+                        {isTeacher && (
+                          <button
+                            onClick={(e) => deleteReferenceDoc(docItem.id, e)}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                            title="Delete Reference Document"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-200 bg-slate-50 px-6 py-3 flex justify-between items-center text-xs text-slate-500">
+              <span>{referenceDocs.length} Reference Material{referenceDocs.length === 1 ? '' : 's'} Available</span>
+              <button onClick={() => setIsRefModalOpen(false)} className="font-semibold text-slate-700 hover:underline">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- TEACHER UPLOAD PDF MODAL --- */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 font-sans">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Upload className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-base font-bold text-slate-800">Upload Reference Material (PDF)</h3>
+              </div>
+              <button onClick={() => setIsUploadModalOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleTeacherUpload} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Document Title</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Chapter 4 Reading Passage, Primary Source"
+                  value={uploadTitle}
+                  onChange={(e) => setUploadTitle(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Relevant Assignment</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. History Essay #2, Weekly Science Analysis"
+                  value={uploadAssignment}
+                  onChange={(e) => setUploadAssignment(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Select PDF File</label>
+                <input
+                  type="file"
+                  required
+                  accept="application/pdf"
+                  onChange={(e) => setUploadFile(e.target.files[0])}
+                  className="w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUploading}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                >
+                  {isUploading ? (
+                    <>
+                      <Clock className="h-3.5 w-3.5 animate-spin" /> Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-3.5 w-3.5" /> Upload to Classroom
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
