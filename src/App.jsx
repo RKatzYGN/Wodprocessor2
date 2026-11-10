@@ -940,13 +940,14 @@ export default function App() {
           </button>
 
           {/* Teacher Upload PDF Button */}
-         {isTeacher && (
-  <button
-    onClick={(e) => deleteReferenceDoc(docItem, e)}
-    className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-    title="Delete Reference Document"
+{/* Teacher Upload PDF Button */}
+{isTeacher && (
+  <button 
+    onClick={() => setIsUploadModalOpen(true)}
+    className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm hover:bg-emerald-100 transition-colors"
+    title="Upload reference PDF for students"
   >
-    <Trash2 className="h-4 w-4" />
+    <Upload className="h-4 w-4 text-emerald-600" /> Upload Reference PDF
   </button>
 )}
 
