@@ -433,24 +433,38 @@ export default function App() {
     }
   };
 
-  const deleteReferenceDoc = async (docItem, e) => {
-    e.stopPropagation();
+  const deleteReferenceDoc = async (itemOrId, e) => {
+    if (e) e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this reference document?")) return;
-    try {
-      // Delete document record from Firestore
-      await deleteDoc(doc(db, 'classroom_reference_materials', docItem.id));
 
-      // Delete the actual physical PDF from Firebase Storage bucket
-      if (docItem.storagePath) {
-        const fileRef = storageRef(storage, docItem.storagePath);
-        await deleteObject(fileRef).catch((err) => console.warn("Storage cleanup error:", err));
+    // Safely extract the ID whether itemOrId is an object OR a string
+    const docId = typeof itemOrId === 'object' ? itemOrId?.id : itemOrId;
+    const storagePath = typeof itemOrId === 'object' ? itemOrId?.storagePath : null;
+
+    if (!docId) {
+      console.error("No valid document ID provided to deleteReferenceDoc");
+      return;
+    }
+
+    try {
+      // 1. Delete record from Firestore
+      await deleteDoc(doc(db, 'classroom_reference_materials', docId));
+
+      // 2. Delete file from Firebase Storage if a path exists
+      if (storagePath && typeof storage !== 'undefined') {
+        const fileRef = storageRef(storage, storagePath);
+        await deleteObject(fileRef).catch((err) => {
+          console.warn("Storage cleanup skipped or file not found:", err);
+        });
       }
 
-      if (activeReferenceDoc?.id === docItem.id) {
+      // 3. Close split-screen if this document is currently open
+      if (activeReferenceDoc?.id === docId) {
         setActiveReferenceDoc(null);
       }
     } catch (err) {
       console.error("Delete failed:", err);
+      alert("Failed to delete reference document. Check Firestore permissions.");
     }
   };
 
