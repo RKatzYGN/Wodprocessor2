@@ -60,6 +60,9 @@ export default function App() {
 
   // User Role (Teacher or Student toggle for demonstration)
   const [isTeacher, setIsTeacher] = useState(false);
+  const [isTeacherPasswordModalOpen, setIsTeacherPasswordModalOpen] = useState(false);
+  const [teacherPasswordInput, setTeacherPasswordInput] = useState('');
+  const [teacherPasswordError, setTeacherPasswordError] = useState('');
 
   // Documents State
   const [documents, setDocuments] = useState([]);
@@ -363,6 +366,29 @@ export default function App() {
   const applyTextColor = (color) => { setTextColor(color); executeCommand('foreColor', color); };
   const applyHighlightColor = (color) => { setHighlightColor(color); executeCommand('hiliteColor', color); };
 
+  const handleTeacherModeToggle = () => {
+    if (isTeacher) {
+      // Switching back to student mode requires no password
+      setIsTeacher(false);
+    } else {
+      // Prompt for password to unlock teacher privileges
+      setTeacherPasswordInput('');
+      setTeacherPasswordError('');
+      setIsTeacherPasswordModalOpen(true);
+    }
+  };
+
+  const handleVerifyTeacherPassword = (e) => {
+    e.preventDefault();
+    if (teacherPasswordInput === 'TeachYGN12!') {
+      setIsTeacher(true);
+      setIsTeacherPasswordModalOpen(false);
+      setTeacherPasswordInput('');
+      setTeacherPasswordError('');
+    } else {
+      setTeacherPasswordError('Incorrect teacher password. Please try again.');
+    }
+  };
  // --- Teacher Reference PDF Upload Handler (Supports Large PDFs) ---
   const handleTeacherUpload = async (e) => {
     e.preventDefault();
@@ -960,11 +986,11 @@ export default function App() {
             </div>
           </div>
 
-          {/* Teacher/Student Role Switcher */}
+      {/* Teacher/Student Role Switcher */}
           <button 
-            onClick={() => setIsTeacher(!isTeacher)}
+            onClick={handleTeacherModeToggle}
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${isTeacher ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
-            title="Toggle between Teacher and Student view"
+            title={isTeacher ? "Switch to Student Mode" : "Unlock Teacher Mode (Password Required)"}
           >
             {isTeacher ? <Shield className="h-3.5 w-3.5 text-amber-600" /> : <User className="h-3.5 w-3.5 text-slate-500" />}
             {isTeacher ? 'Teacher Mode' : 'Student Mode'}
