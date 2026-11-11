@@ -1227,17 +1227,21 @@ export default function App() {
                 </div>
               )}
 
-              {/* Core Text Editor Container */}
-              <div
-                ref={editorRef}
-                contentEditable
-                suppressContentEditableWarning
-                onInput={handleEditorInput}
-                onKeyDown={handleKeyDown}
-                onKeyUp={checkActiveFormats}
-                onMouseUp={checkActiveFormats}
-                className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px] h-auto flex-1"
-              />
+           {/* Core Text Editor Container */}
+<div
+  ref={editorRef}
+  contentEditable
+  spellCheck={true}
+  lang="en"
+  autoCorrect="on"
+  autoCapitalize="sentences"
+  suppressContentEditableWarning
+  onInput={handleEditorInput}
+  onKeyDown={handleKeyDown}
+  onKeyUp={checkActiveFormats}
+  onMouseUp={checkActiveFormats}
+  className="outline-none text-slate-900 leading-relaxed font-sans min-h-[864px] h-auto flex-1"
+/>
 
               {/* Screen Footer Control Section */}
               {showFooter && (
